@@ -1,5 +1,5 @@
 /**
- * popup.js — Flow Automation V0.1.5
+ * popup.js — Flow Automation V0.1.6
  *
  * Chaîne réelle : Popup -> Background -> Onglet actif -> Content script -> DOM.
  * Aucun échec silencieux : chaque étape est journalisée et affichée.
@@ -35,7 +35,8 @@ const els = {
   setModel: document.getElementById('set-model'),
   setRatio: document.getElementById('set-ratio'),
   setCount: document.getElementById('set-count'),
-  setFolder: document.getElementById('set-folder')
+  setFolder: document.getElementById('set-folder'),
+  setCdp: document.getElementById('set-cdp')
 };
 
 let flowTabId = null;
@@ -288,7 +289,7 @@ async function checkFlowPage() {
 function fmtDiag(r) {
   const L = [];
   const yn = (v) => (v ? 'OUI' : 'NON');
-  L.push('Flow Automation V0.1.5 — Diagnostic');
+  L.push('Flow Automation V0.1.6 — Diagnostic');
   L.push('Date : ' + new Date(r.ts || Date.now()).toLocaleString());
   L.push('');
   L.push('== API ==');
@@ -297,6 +298,7 @@ function fmtDiag(r) {
   L.push('scripting      : ' + yn(r.hasScripting));
   L.push('downloads      : ' + yn(r.hasDownloads));
   L.push('storage        : ' + yn(r.hasStorage));
+  L.push('debugger (CDP) : ' + yn(r.cdpAvailable));
   L.push('');
   L.push('== ONGLET ==');
   L.push('onglets Flow   : ' + (r.flowTabs != null ? r.flowTabs : '?'));
@@ -374,6 +376,7 @@ async function saveSettings() {
   s.aspectRatio = els.setRatio.value.trim() || null;
   s.outputCount = els.setCount.value ? parseInt(els.setCount.value, 10) : null;
   s.downloadFolder = els.setFolder.value.trim() || 'flow-automation';
+  s.useCdp = !!els.setCdp.checked;
   await FlowAutomation.storage.set('settings', s);
 }
 
@@ -383,6 +386,7 @@ async function loadSettings() {
   els.setRatio.value = s.aspectRatio || '';
   els.setCount.value = s.outputCount || '';
   els.setFolder.value = s.downloadFolder || 'flow-automation';
+  els.setCdp.checked = !!s.useCdp;
 }
 
 // --- Actions ----------------------------------------------------------------

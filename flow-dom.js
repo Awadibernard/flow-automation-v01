@@ -653,6 +653,21 @@
   // --- Utilitaires de visibilité ---
 
   /**
+   * Centre (coordonnées viewport) d'un élément, pour les clics CDP.
+   * Retourne { x, y } ou null si l'élément n'a pas de boîte.
+   */
+  dom.elementCenter = function (el) {
+    if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+    try {
+      const r = el.getBoundingClientRect();
+      if (!r || r.width <= 0 || r.height <= 0) return null;
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+    } catch (e) {
+      return null;
+    }
+  };
+
+  /**
    * True si l'élément est visible (box + non display:none).
    */
   dom.isVisible = function (el) {

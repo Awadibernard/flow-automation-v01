@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flow Automation V0.1.5</title>
+  <title>Flow Automation V0.1.6</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <h1>Flow Automation <span class="badge">V0.1.5</span></h1>
+    <h1>Flow Automation <span class="badge">V0.1.6</span></h1>
   </header>
 
   <!-- Statut détaillé de la page (état distinct et lisible) -->
@@ -46,8 +46,16 @@
           <label for="set-folder">Dossier de téléchargement</label>
           <input id="set-folder" type="text" value="flow-automation">
         </div>
+        <div class="setting-row">
+          <label for="set-cdp">Saisie réelle (CDP)</label>
+          <input id="set-cdp" type="checkbox">
+        </div>
         <p class="hint">Modèle / Ratio / Nombre ne sont PAS encore appliqués à Google Flow
         dans cette version.</p>
+        <p class="hint">Saisie réelle (CDP) : utilise le protocole DevTools pour produire de vrais
+        événements (recommandé si « le prompt est collé mais la génération ne démarre pas »).
+        Un bandeau « Un outil de débogage contrôle ce navigateur » peut apparaître.
+        Désactivé par défaut.</p>
       </details>
     </section>
 

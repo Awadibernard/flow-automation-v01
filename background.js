@@ -1,5 +1,5 @@
 /**
- * background.js — Flow Automation V0.1.5
+ * background.js — Flow Automation V0.1.6
  * Service worker MV3.
  *
  * Responsabilités :
@@ -15,6 +15,28 @@
  */
 
 'use strict';
+
+// --- Contrôle CDP optionnel -------------------------------------------------
+// Import CLASSIQUE (pas `import`) : le manifest déclare le service worker SANS
+// `type: module`. En cas d'absence du fichier, on retombe sur un objet inactif
+// pour ne jamais faire échouer le service worker.
+try {
+  importScripts('cdp-controller.js');
+} catch (e) {
+  console.warn('[background] cdp-controller.js indisponible', e);
+}
+if (typeof self !== 'undefined' && typeof self.FlowCdp === 'undefined') {
+  self.FlowCdp = {
+    isAvailable: () => false,
+    isAttached: () => false,
+    attach: async () => ({ ok: false, error: 'CDP indisponible' }),
+    detach: async () => ({ ok: true }),
+    send: async () => ({ ok: false, error: 'CDP indisponible' }),
+    insertText: async () => ({ ok: false, error: 'CDP indisponible' }),
+    pressKey: async () => ({ ok: false, error: 'CDP indisponible' }),
+    click: async () => ({ ok: false, error: 'CDP indisponible' })
+  };
+}
 
 // --- Couche d'adaptation navigateurs ---------------------------------------
 // Attention : `browser` (namespace promisifié) n'est pas toujours présent sur
@@ -170,6 +192,29 @@ async function ensureContent(tabId) {
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 /**
+ * Résout l'onglet cible : utilise message.tabId s'il est fourni, sinon
+ * recherche l'onglet Flow courant. Retourne un id numérique ou null.
+ */
+async function resolveTabId(tabId) {
+  if (tabId) return tabId;
+  const found = await findTargetTab();
+  return (found && found.tab && found.tab.id) || null;
+}
+
+/**
+ * Relaie une commande CDP vers self.FlowCdp[method] sur l'onglet cible.
+ * `extra` transporte les paramètres spécifiques (text, key, x, y).
+ */
+async function cdpForward(method, message) {
+  const cdp = (typeof self !== 'undefined' && self.FlowCdp) || null;
+  if (!cdp || typeof cdp[method] !== 'function') return { ok: false, error: 'CDP indisponible' };
+  const tabId = await resolveTabId(message.tabId);
+  if (!tabId) return { ok: false, error: 'Aucun onglet cible' };
+  const r = await cdp[method](tabId, message.text, message.key, message.x, message.y);
+  return { ok: !!r.ok, tabId: tabId, error: r.error || null, result: r.result || null };
+}
+
+/**
  * Récupère l'état de la page auprès du content script.
  * Return { ok, value?, error? }
  */
@@ -191,6 +236,7 @@ async function diagnose() {
     hasScripting: !!(N && N.scripting && N.scripting.executeScript),
     hasDownloads: !!(N && N.downloads),
     hasStorage: !!(N && N.storage),
+    cdpAvailable: !!(typeof self !== 'undefined' && self.FlowCdp && self.FlowCdp.isAvailable && self.FlowCdp.isAvailable()),
     tab: null,
     flowTabs: 0,
     contentPresent: false,
@@ -425,6 +471,39 @@ N.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'DIAGNOSE':
         return await diagnose();
 
+      case 'CDP_AVAILABLE':
+        return { ok: true, available: !!(typeof self !== 'undefined' && self.FlowCdp && self.FlowCdp.isAvailable && self.FlowCdp.isAvailable()) };
+
+      case 'CDP_ATTACH': {
+        const tabId = await resolveTabId(message.tabId);
+        if (!tabId) return { ok: false, error: 'Aucun onglet cible' };
+        const r = await self.FlowCdp.attach(tabId);
+        if (r.ok) await log('info', 'Débogueur (CDP) attaché à l\'onglet ' + tabId + ' — saisie réelle ACTIVÉE');
+        else await log('error', 'Attachement CDP impossible : ' + r.error);
+        return { ok: !!r.ok, tabId: tabId, already: !!r.already, error: r.error || null };
+      }
+
+      case 'CDP_DETACH': {
+        const tabId = await resolveTabId(message.tabId);
+        if (!tabId) return { ok: false, error: 'Aucun onglet cible' };
+        await self.FlowCdp.detach(tabId);
+        await log('info', 'Débogueur (CDP) détaché de l\'onglet ' + tabId);
+        return { ok: true, tabId: tabId };
+      }
+
+      case 'CDP_INSERT_TEXT':
+        return await cdpForward('insertText', message);
+      case 'CDP_PRESS_KEY':
+        return await cdpForward('pressKey', message);
+      case 'CDP_CLICK':
+        return await cdpForward('click', message);
+
+      case 'CDP_SEND': {
+        const tabId = await resolveTabId(message.tabId);
+        if (!tabId) return { ok: false, error: 'Aucun onglet cible' };
+        return await self.FlowCdp.send(tabId, message.method, message.params);
+      }
+
       default:
         return { ok: false, error: 'Type de message inconnu : ' + (message && message.type) };
     }
@@ -436,7 +515,7 @@ N.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 N.runtime.onInstalled.addListener((details) => {
   const reason = (details && details.reason) || 'unknown';
-  log('info', 'Extension installée / mise à jour (V0.1.5), raison : ' + reason);
+  log('info', 'Extension installée / mise à jour (V0.1.6), raison : ' + reason);
   // force = true : une mise à jour doit remplacer des sélecteurs périmés.
   initSelectors(true);
 });
@@ -444,4 +523,4 @@ N.runtime.onInstalled.addListener((details) => {
 // Au démarrage du worker on ne force pas : on ne réécrit que si le fichier livré
 // a changé (comparaison d'empreinte), pour préserver un ajustement manuel.
 initSelectors(false);
-log('info', 'Service worker Flow Automation V0.1.5 démarré');
+log('info', 'Service worker Flow Automation V0.1.6 démarré');

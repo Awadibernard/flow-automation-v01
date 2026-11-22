@@ -24,7 +24,8 @@
       outputCount: null,    // null = défaut du site
       concurrentPrompts: 1, // V0.1 : toujours 1 (séquentiel)
       autoDownload: true,
-      downloadFolder: 'flow-automation'
+      downloadFolder: 'flow-automation',
+      useCdp: false         // false = actuation DOM (défaut) ; true = saisie réelle via CDP
     },
     queue: null,            // état de la file, voir queue-manager.js
     results: [],            // historique des résultats
