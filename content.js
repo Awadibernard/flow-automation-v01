@@ -23,7 +23,14 @@
 
   // Marqueur de chargement : permet au diagnostic (getInjected) de prouver que
   // CE fichier a bien été exécuté, et non un ancien contenu corrompu/cache.
-  window.__FLOW_AUTOMATION_LOADED__ = '0.1.1';
+  // Il sert aussi de garde d'idempotence : si le service worker réinjecte le
+  // script alors qu'il tourne déjà, on s'arrête immédiatement (pas de second
+  // écouteur, pas de seconde initialisation).
+  if (window.__FLOW_AUTOMATION_LOADED__) {
+    console.warn('[content] déjà chargé (v' + window.__FLOW_AUTOMATION_LOADED__ + ') — réinjection ignorée');
+    return;
+  }
+  window.__FLOW_AUTOMATION_LOADED__ = '0.1.2';
 
   if (typeof window.FlowAutomation === 'undefined') {
     window.FlowAutomation = {};

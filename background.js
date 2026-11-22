@@ -1,5 +1,5 @@
 /**
- * background.js — Flow Automation V0.1.1
+ * background.js — Flow Automation V0.1.2
  * Service worker MV3.
  *
  * Responsabilités :
@@ -332,7 +332,7 @@ async function getSelectors() {
   }
 }
 
-async function initSelectors() {
+async function initSelectors(force) {
   const EMBEDDED = {
     version: 1,
     note: 'Sélecteurs locaux — repli embarqué',
@@ -348,16 +348,28 @@ async function initSelectors() {
     durations: { generationTimeoutMs: 180000, pollIntervalMs: 2000, tileStabilityChecks: 3, tileStabilityDelayMs: 1500 }
   };
   try {
-    const existing = await N.storage.local.get('selectors');
-    if (existing && existing.selectors && existing.selectors.version >= 1) return;
-    let selectors = EMBEDDED;
+    let selectors = null;
     try {
       const resp = await fetch(N.runtime.getURL('selectors.json'));
       if (resp.ok) selectors = await resp.json();
     } catch (e) {
       console.warn('[background] selectors.json illisible, repli embarqué', e);
     }
-    await N.storage.local.set({ selectors });
+    if (!selectors || !selectors.selectors) selectors = EMBEDDED;
+
+    // Empreinte du fichier livré : si selectors.json a changé (mise à jour de
+    // l'extension, sélecteurs ajustés), on remplace la copie en storage au lieu
+    // de conserver indéfiniment une version périmée.
+    const fingerprint = JSON.stringify(selectors);
+
+    if (force !== true) {
+      const existing = await N.storage.local.get('selectors');
+      const cur = existing && existing.selectors;
+      if (cur && cur.fingerprint === fingerprint) return; // déjà à jour
+    }
+
+    await N.storage.local.set({ selectors: Object.assign({}, selectors, { fingerprint }) });
+    await log('info', 'Sélecteurs synchronisés (v' + (selectors.version || '?') + ')');
   } catch (e) {
     console.error('[background] initSelectors failed', e);
   }
@@ -418,10 +430,14 @@ N.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // --- Lifecycle --------------------------------------------------------------
 
-N.runtime.onInstalled.addListener(() => {
-  log('info', 'Extension installée / mise à jour (V0.1.1)');
-  initSelectors();
+N.runtime.onInstalled.addListener((details) => {
+  const reason = (details && details.reason) || 'unknown';
+  log('info', 'Extension installée / mise à jour (V0.1.2), raison : ' + reason);
+  // force = true : une mise à jour doit remplacer des sélecteurs périmés.
+  initSelectors(true);
 });
 
-initSelectors();
-log('info', 'Service worker Flow Automation V0.1.1 démarré');
+// Au démarrage du worker on ne force pas : on ne réécrit que si le fichier livré
+// a changé (comparaison d'empreinte), pour préserver un ajustement manuel.
+initSelectors(false);
+log('info', 'Service worker Flow Automation V0.1.2 démarré');

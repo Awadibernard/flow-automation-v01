@@ -1,5 +1,5 @@
 /**
- * popup.js — Flow Automation V0.1.1
+ * popup.js — Flow Automation V0.1.2
  *
  * Chaîne réelle : Popup -> Background -> Onglet actif -> Content script -> DOM.
  * Aucun échec silencieux : chaque étape est journalisée et affichée.
@@ -255,7 +255,7 @@ async function checkFlowPage() {
 function fmtDiag(r) {
   const L = [];
   const yn = (v) => (v ? 'OUI' : 'NON');
-  L.push('Flow Automation V0.1.1 — Diagnostic');
+  L.push('Flow Automation V0.1.2 — Diagnostic');
   L.push('Date : ' + new Date(r.ts || Date.now()).toLocaleString());
   L.push('');
   L.push('== API ==');

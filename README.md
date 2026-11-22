@@ -1,4 +1,4 @@
-# Flow Automation V0.1.1 (prototype)
+# Flow Automation V0.1.2 (prototype)
 
 Extension Chrome Manifest V3 indépendante pour automatiser la génération de contenu
 sur [Google Flow](https://flow.google.com) — de façon **transparente et fiable**,
@@ -7,14 +7,35 @@ sans contournement, sans serveur externe, sans secret de l'extension d'origine.
 > **Cible prioritaire : Quetta Browser sur Android 12** (fork Chromium MV3).
 > Chrome Desktop reste supporté.
 
-> V0.1.1 = correctif de fiabilité : la chaîne
-> `Popup → Background → Onglet actif → Content script → Google Flow` est
-> désormais **vérifiée à chaque étape**, avec réinjection contrôlée du content
-> script et un **rapport de diagnostic** intégré.
+> V0.1.1 a corrigé la chaîne
+> `Popup → Background → Onglet actif → Content script → Google Flow`
+> (vérifiée à chaque étape, réinjection contrôlée, diagnostic intégré).
+> V0.1.2 = **robustesse de la réinjection et des sélecteurs** (voir ci-dessous).
 
 ---
 
-## Nouveautés V0.1.1 (correctifs)
+## Nouveautés V0.1.2 (correctifs de robustesse)
+
+Deux défauts silencieux restaient possibles lorsque le service worker réinjecte
+le content script sur un onglet où il tourne **déjà**, ou lors d'une mise à jour :
+
+1. **Réinjection idempotente** — réévaluer les scripts ne doit rien casser :
+   - `queue-manager.js` ne **réinitialise plus** l'état de la file s'il est déjà
+     chargé (une file en cours n'est plus perdue silencieusement) ;
+   - `content.js` **ne réenregistre plus** de second écouteur de messages : la
+     garde `window.__FLOW_AUTOMATION_LOADED__` renvoie immédiatement.
+2. **Sélecteurs rafraîchis à la mise à jour** — `selectors.json` est comparé par
+   **empreinte** (`fingerprint`). À l'installation/mise à jour (`onInstalled`),
+   la copie en `storage` est **remplacée** si le fichier livré a changé, au lieu
+   de conserver indéfiniment une version périmée. Au simple démarrage du worker,
+   la copie n'est réécrite que si elle diffère (préserve un ajustement manuel).
+
+Tests ajoutés : `tests/reinject-simulate.js` (16/16) couvre la double évaluation,
+la survie de la file, l'unicité de l'écouteur.
+
+---
+
+## Correctifs V0.1.1
 
 ### Cause racine du bug « Onglet Flow non prêt » (corrigée)
 
@@ -133,7 +154,7 @@ Chaque maillon renvoie un échec **explicite** (jamais un message générique un
 - Une seule génération à la fois (séquentiel strict).
 - **Jamais** de démarrage annoncé sans confirmation réelle (`QUEUE_GET`).
 
-## Limites connues de V0.1.1
+## Limites connues de V0.1.2
 
 1. **Sélecteurs DOM non validés sur le site réel.** Le DOM de flow.google.com est
    généré dynamiquement (Angular) et n'est pas inspectable hors navigateur
@@ -156,7 +177,7 @@ Chaque maillon renvoie un échec **explicite** (jamais un message générique un
 
 ### Résultats des tests simulés (réellement exécutés)
 
-Quatre suites de tests unitaires **simulés** existent et ont été exécutées avec
+Cinq suites de tests unitaires **simulés** existent et ont été exécutées avec
 Node.js (hors navigateur) :
 
 ```bash
@@ -164,6 +185,7 @@ node tests/simulate.js             # → Passed: 13 / Failed: 0
 node tests/queue-simulate.js       # → Passed: 24 / Failed: 0
 node tests/status-simulate.js      # → Passed: 32 / Failed: 0
 node tests/start-flow-simulate.js  # → Passed: 26 / Failed: 0
+node tests/reinject-simulate.js    # → Passed: 16 / Failed: 0
 ```
 
 | Suite | Ce qui est testé | Résultat |
@@ -172,6 +194,7 @@ node tests/start-flow-simulate.js  # → Passed: 26 / Failed: 0
 | `tests/queue-simulate.js` | `download` : slugify, buildFilename, vérification d'accès (CORS/HTTP) ; `queue` : création, persistance, exécution séquentielle, restauration, pause/reprise | ✅ 24/24 |
 | `tests/status-simulate.js` | `status.js` : **les 11 scénarios** — URL exacte fournie, Flow sans projet, projet, chargement, content absent, content présent, message sans réponse, API indisponible, aucun onglet/mauvais site, DOM incomplet, erreur de communication | ✅ 32/32 |
 | `tests/start-flow-simulate.js` | Parcours **Démarrer** : aucun prompt, démarrage valide, multi-prompts, refus si page non prête / content absent / sans réponse / API absente / pas d'onglet, **file inactive ≠ démarré**, erreurs de création et de `tabs.query` | ✅ 26/26 |
+| `tests/reinject-simulate.js` | **Réinjection** : double évaluation des scripts, survie de la file d'attente, unicité de l'écouteur de messages, réponse de l'écouteur après réinjection | ✅ 16/16 |
 
 > ⚠️ Ces tests **ne valident pas** le comportement réel de Google Flow (DOM et API
 > simulés). Ils vérifient la logique, pas les sélecteurs du site ni Quetta.

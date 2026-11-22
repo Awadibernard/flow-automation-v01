@@ -23,6 +23,16 @@
     window.FlowAutomation = {};
   }
 
+  // --- Garde d'idempotence -----------------------------------------------
+  // Ce fichier peut être évalué DEUX fois dans le même onglet si le service
+  // worker le réinjecte alors qu'il tourne déjà (ou si la page a déjà été
+  // chargée). On ne doit jamais écraser l'état de la file existant : sinon
+  // une file en cours serait perdue silencieusement.
+  if (window.FlowAutomation.queue) {
+    console.warn('[queue] queue-manager déjà chargé — réévaluation ignorée');
+    return;
+  }
+
   const queue = {};
 
   const QUEUE_KEY = 'queue';
