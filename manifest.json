@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flow Automation V0.1.4",
-  "version": "0.1.4",
-  "description": "Automatisation fiable et transparente de génération de contenu sur Google Flow. Prototype V0.1.4 (compatibilité Quetta Android).",
+  "name": "Flow Automation V0.1.5",
+  "version": "0.1.5",
+  "description": "Automatisation fiable et transparente de génération de contenu sur Google Flow. Prototype V0.1.5 (compatibilité Quetta Android).",
   "minimum_chrome_version": "102",
   "permissions": [
     "storage",

@@ -1,5 +1,5 @@
 /**
- * popup.js — Flow Automation V0.1.4
+ * popup.js — Flow Automation V0.1.5
  *
  * Chaîne réelle : Popup -> Background -> Onglet actif -> Content script -> DOM.
  * Aucun échec silencieux : chaque étape est journalisée et affichée.
@@ -28,6 +28,7 @@ const els = {
   current: document.getElementById('current-prompt'),
   items: document.getElementById('queue-items'),
   log: document.getElementById('log-area'),
+  copyLogs: document.getElementById('btn-copy-logs'),
   diagCard: document.getElementById('diag-card'),
   diagReport: document.getElementById('diag-report'),
   copyDiag: document.getElementById('btn-copy-diag'),
@@ -81,6 +82,38 @@ function logLine(text) {
   const stamp = new Date().toLocaleTimeString();
   els.log.textContent = (els.log.textContent + '\n[' + stamp + '] UI: ' + text).trim();
   els.log.scrollTop = els.log.scrollHeight;
+}
+
+/**
+ * Copie le texte d'un élément <pre> dans le presse-papier, avec repli
+ * (sélection du texte) si l'API clipboard est indisponible — utile en WebView
+ * (Quetta). Le libellé du bouton est brièvement remplacé par « Copié ! ».
+ */
+async function copyText(el, button, label) {
+  const text = (el && el.textContent) || '';
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch (e) { ok = false; }
+
+  if (!ok) {
+    // Repli : sélectionner tout le texte pour une copie manuelle.
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) { /* sans conséquence */ }
+  }
+
+  if (button) {
+    button.textContent = ok ? 'Copié !' : 'Sélectionnez puis copiez';
+    setTimeout(() => { button.textContent = label; }, 1500);
+  }
 }
 
 // --- Lecture des logs persistés --------------------------------------------
@@ -255,7 +288,7 @@ async function checkFlowPage() {
 function fmtDiag(r) {
   const L = [];
   const yn = (v) => (v ? 'OUI' : 'NON');
-  L.push('Flow Automation V0.1.4 — Diagnostic');
+  L.push('Flow Automation V0.1.5 — Diagnostic');
   L.push('Date : ' + new Date(r.ts || Date.now()).toLocaleString());
   L.push('');
   L.push('== API ==');
@@ -288,12 +321,16 @@ function fmtDiag(r) {
     L.push('isInProject    : ' + yn(r.pageState.isInProject));
     L.push('readyState     : ' + r.pageState.readyState);
     L.push('app montée     : ' + yn(r.pageState.hasAppRoot));
-    L.push('champ prompt   : ' + yn(r.pageState.hasPrompt));
+    L.push('champ prompt   : ' + yn(r.pageState.hasPrompt) +
+      (r.pageState.promptLen != null ? ' (' + r.pageState.promptLen + ' caractère(s) actuellement)' : ''));
     L.push('bouton générer : ' + yn(r.pageState.hasSubmit) +
       (r.pageState.submitLevel ? ' (via ' + r.pageState.submitLevel + ')' : ''));
     if (r.pageState.submitBest) {
       L.push('bouton retenu  : ' + r.pageState.submitBest +
         (r.pageState.submitBestScore != null ? '  [score ' + r.pageState.submitBestScore + ']' : ''));
+    }
+    if (r.pageState.submitDisabled != null) {
+      L.push('bouton actif   : ' + (r.pageState.submitDisabled ? 'NON (désactivé !)' : 'OUI'));
     }
     L.push('tuiles         : ' + r.pageState.tiles);
     L.push('médias         : ' + r.pageState.medias);
@@ -429,20 +466,8 @@ if (api && api.runtime && api.runtime.onMessage) {
 
 els.recheck.addEventListener('click', () => checkFlowPage());
 els.diagnose.addEventListener('click', runDiagnose);
-els.copyDiag.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(els.diagReport.textContent || '');
-    els.copyDiag.textContent = 'Copié !';
-    setTimeout(() => { els.copyDiag.textContent = 'Copier le rapport'; }, 1500);
-  } catch (e) {
-    // Repli : sélectionner le texte pour copie manuelle.
-    const range = document.createRange();
-    range.selectNodeContents(els.diagReport);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-});
+els.copyDiag.addEventListener('click', () => copyText(els.diagReport, els.copyDiag, 'Copier le rapport'));
+els.copyLogs.addEventListener('click', () => copyText(els.log, els.copyLogs, 'Copier les logs'));
 els.start.addEventListener('click', onStart);
 els.pause.addEventListener('click', onPause);
 els.resume.addEventListener('click', onResume);

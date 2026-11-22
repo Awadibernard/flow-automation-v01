@@ -53,6 +53,28 @@ global.getComputedStyle = () => ({ display: 'block', visibility: 'visible' });
 global.KeyboardEvent = class {
   constructor(type, opts) { this.type = type; Object.assign(this, opts || {}); }
 };
+// flow-dom utilise `new InputEvent(...)` : fourni pour tester le remplissage.
+global.InputEvent = class {
+  constructor(type, opts) { this.type = type; Object.assign(this, opts || {}); }
+};
+global.MouseEvent = class {
+  constructor(type, opts) {
+    this.type = type;
+    // `view` (window) créerait une référence circulaire dans les sorties de
+    // débogage des tests : on ne le conserve pas dans le stub.
+    const o = Object.assign({}, opts || {});
+    delete o.view;
+    Object.assign(this, o);
+  }
+};
+global.PointerEvent = class {
+  constructor(type, opts) {
+    this.type = type;
+    const o = Object.assign({}, opts || {});
+    delete o.view;
+    Object.assign(this, o);
+  }
+};
 
 require('../flow-dom.js');
 const dom = global.FlowAutomation.dom;
@@ -248,6 +270,37 @@ function assert(name, cond, detail) {
     const c = dom.getSubmitButtonCandidates();
     assert('le vrai bouton (proche, icône send) gagne',
       c.button === real, c.button === toolbar ? 'barre d\'outils retenue' : 'aucun/autre');
+  }
+
+  // --- 11. setPromptText sur contenteditable : événement input porteur de data ---
+  // Sans `inputType`/`data`, Angular garde son modèle vide et le bouton reste
+  // désactivé. On vérifie qu'un InputEvent 'input' porteur du texte est émis.
+  console.log('\n--- 11. setPromptText (contenteditable) émet un vrai input ---');
+  {
+    reset();
+    const field = el('div', { attrs: { contenteditable: 'true' }, text: '' });
+    map.qs[PROMPT_SEL] = field;
+    const ok = dom.setPromptText('un chat dans l\'eau');
+    assert('setPromptText retourne true', ok === true);
+    assert('le texte est présent dans le champ', dom.getPromptText() === 'un chat dans l\'eau', dom.getPromptText());
+    const inputEv = field._events.find((e) => e.type === 'input');
+    assert('un événement input a été émis', !!inputEv);
+    assert('l\'événement input porte le texte (data)', !!inputEv && inputEv.data === 'un chat dans l\'eau',
+      inputEv ? JSON.stringify(inputEv.data) : 'aucun');
+    const beforeEv = field._events.find((e) => e.type === 'beforeinput');
+    assert('un événement beforeinput a été émis', !!beforeEv);
+  }
+
+  // --- 12. dom.click : geste souris complet + UN SEUL clic natif ---
+  console.log('\n--- 12. dom.click : geste souris + clic natif unique ---');
+  {
+    reset();
+    const btn = el('button', { attrs: { 'aria-label': 'Lancer la génération' } });
+    dom.click(btn);
+    const types = btn._events.map((e) => e.type);
+    assert('mousedown émis', types.indexOf('mousedown') !== -1, JSON.stringify(types));
+    assert('mouseup émis', types.indexOf('mouseup') !== -1, JSON.stringify(types));
+    assert('clic natif déclenché UNE seule fois', btn.clicked === 1, 'clicked=' + btn.clicked);
   }
 
   console.log('\n--- Résultat ---');

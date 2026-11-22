@@ -199,6 +199,13 @@
   /**
    * Écrit du texte dans un contenteditable/textarea en simulant un apport
    * réel d'input (événements compatibles Angular/React).
+   *
+   * Pour un contenteditable, la simple affectation de `textContent` NE suffit
+   * PAS : les éditeurs riches (Angular) écoutent `beforeinput`/`input` avec
+   * `inputType` et `data` pour valider leur modèle. On privilégie donc une
+   * saisie « réelle » via `execCommand('insertText')` (qui produit un vrai
+   * InputEvent), avec repli manuel + InputEvent explicite.
+   *
    * Retourne true/false.
    */
   dom.setPromptText = function (text) {
@@ -220,11 +227,49 @@
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       }
-      // contenteditable
+
+      // --- contenteditable ---
       el.focus();
-      el.textContent = text;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+
+      // 1) Saisie « réelle » : sélectionne tout le contenu puis insère le texte.
+      //    execCommand('insertText') génère un InputEvent que les frameworks
+      //    interprètent comme une frappe utilisateur.
+      let usedExec = false;
+      try {
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+        usedExec = document.execCommand && document.execCommand('insertText', false, text) === true;
+      } catch (e) {
+        usedExec = false;
+      }
+
+      // 2) Repli manuel : affecte le texte puis émet beforeinput + input avec
+      //    inputType/data explicites (indispensable pour Angular).
+      if (!usedExec) {
+        el.textContent = text;
+        try {
+          el.dispatchEvent(new InputEvent('beforeinput', {
+            bubbles: true, cancelable: true, inputType: 'insertText', data: text
+          }));
+        } catch (e2) {
+          el.dispatchEvent(new Event('beforeinput', { bubbles: true }));
+        }
+        try {
+          el.dispatchEvent(new InputEvent('input', {
+            bubbles: true, cancelable: false, inputType: 'insertText', data: text
+          }));
+        } catch (e2) {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
       return true;
     } catch (e) {
       console.error('[flow-dom] setPromptText failed', e);
@@ -457,17 +502,25 @@
   dom.submitPrompt = function () {
     const c = dom.getSubmitButtonCandidates();
     if (c.button) {
+      // UNE seule activation (voir dom.click) : la séquence souris complète est
+      // dispatchée, puis `el.click()` natif déclenche l'action par défaut du
+      // bouton (`type=submit` → soumission réelle du formulaire), ce qu'un
+      // MouseEvent synthétique ne fait PAS. On NE presse PAS Entrée ici : cela
+      // pourrait déclencher une seconde génération. Le repli Entrée est décidé
+      // par l'appelant (content.js) uniquement si le clic n'a produit aucun signe.
       const ok = dom.click(c.button);
-      return { ok, via: 'button', level: c.level, error: ok ? null : 'clic refusé par le DOM' };
+      const reacted = !!(c.button.disabled ||
+        (c.button.getAttribute && c.button.getAttribute('aria-disabled') === 'true'));
+      return { ok, via: 'button', level: c.level, reacted, button: c.button, field: c.field, error: ok ? null : 'bouton non actionnable' };
     }
     // Repli Entrée : pertinent uniquement si le champ contient du texte.
     const field = c.field;
     if (field && !dom.isPromptEmpty()) {
       const ok = dom.pressEnter(field);
-      return { ok, via: 'enter', level: 'keyboard', error: ok ? null : 'événement Entrée non pris en compte' };
+      return { ok, via: 'enter', level: 'keyboard', reacted: false, field, error: ok ? null : 'événement Entrée non pris en compte' };
     }
     return {
-      ok: false, via: null, level: c.level,
+      ok: false, via: null, level: c.level, reacted: false,
       error: field && dom.isPromptEmpty()
         ? 'Bouton introuvable et champ vide (saisie non prise en compte ?)'
         : 'Bouton de génération introuvable'
@@ -493,12 +546,30 @@
   };
 
   /**
-   * Clique un élément (avec vérification préalable de visibilité).
+   * Active un élément avec UNE seule activation :
+   *  - on rejoue le geste souris (pointerdown/mousedown/pointerup/mouseup) dont
+   *    dépendent certains composants Angular Material (ripple/gesture) ;
+   *  - puis on appelle `el.click()` NATIF : il émet UN seul événement `click`
+   *    (qui déclenche le listener Angular) ET l'action par défaut du bouton
+   *    (`type=submit` → soumission réelle), ce qu'un MouseEvent synthétique ne
+   *    fait pas. Comme `el.click()` fournit déjà l'événement `click`, on
+   *    n'en dispatche PAS un second (sinon le handler s'exécuterait deux fois).
    */
   dom.click = function (el) {
     if (!el) return false;
     try {
-      el.click();
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0 };
+      try { el.dispatchEvent(new PointerEvent('pointerdown', opts)); } catch (e) { /* ancien moteur */ }
+      try { el.dispatchEvent(new MouseEvent('mousedown', opts)); } catch (e) { /* ancien moteur */ }
+      try { el.focus && el.focus(); } catch (e) { /* sans conséquence */ }
+      try { el.dispatchEvent(new PointerEvent('pointerup', opts)); } catch (e) { /* ancien moteur */ }
+      try { el.dispatchEvent(new MouseEvent('mouseup', opts)); } catch (e) { /* ancien moteur */ }
+      // UN seul événement click + action par défaut (soumission de formulaire).
+      if (typeof el.click === 'function') {
+        el.click();
+      } else {
+        el.dispatchEvent(new MouseEvent('click', opts));
+      }
       return true;
     } catch (e) {
       console.error('[flow-dom] click failed', e);

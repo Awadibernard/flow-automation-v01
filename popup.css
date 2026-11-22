@@ -1,4 +1,4 @@
-/* Flow Automation V0.1.4 — interface mobile, lisible et sans fioritures */
+/* Flow Automation V0.1.5 — interface mobile, lisible et sans fioritures */
 
 :root {
   --bg: #f5f6f8;
@@ -101,6 +101,9 @@ button.mini {
   white-space: pre-wrap;
   word-break: break-all;
   margin-bottom: 8px;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 main { padding: 10px 12px; }
@@ -209,4 +212,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }

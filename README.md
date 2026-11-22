@@ -1,4 +1,4 @@
-# Flow Automation V0.1.4 (prototype)
+# Flow Automation V0.1.5 (prototype)
 
 Extension Chrome Manifest V3 indépendante pour automatiser la génération de contenu
 sur [Google Flow](https://flow.google.com) — de façon **transparente et fiable**,
@@ -7,19 +7,46 @@ sans contournement, sans serveur externe, sans secret de l'extension d'origine.
 > **Cible prioritaire : Quetta Browser sur Android 12** (fork Chromium MV3).
 > Chrome Desktop reste supporté.
 
-> V0.1.3 détectait un **bouton** mais pas **le bon** (un bouton de barre d'outils
-> détournait l'envoi). V0.1.4 = **sélection par score** du vrai bouton d'envoi
-> (icône flèche + position près du champ), diagnostic complet, et **échec rapide**
-> si la génération ne démarre pas.
+> V0.1.4 a trouvé **le bon bouton** (`aria-label="Lancer la génération"`,
+> `type=submit`) mais **le clic ne déclenchait rien**. V0.1.5 corrige
+> l'**actionnement** : saisie `contenteditable` compatible Angular, clic avec geste
+> souris complet + clic natif, journalisation fiabilisée, **logs copiables**.
 
 ---
 
+## Nouveautés V0.1.5 (le clic déclenche vraiment la génération)
+
+Diagnostic réel : le bouton retenu est **exactement le bon**
+(`button[aria-label="Lancer la génération" type="submit"]{arrow_forward}`), le champ
+contient le prompt… mais **la génération ne démarre jamais**, et la ligne
+« Soumission du prompt » **manquait** dans les logs. Trois causes racines corrigées :
+
+1. **Saisie `contenteditable` compatible Angular** (`dom.setPromptText`) : une
+   affectation `textContent` + `Event('input')` ne transporte ni `inputType` ni
+   `data` ; Angular garde alors son modèle **vide** et le bouton d'envoi reste
+   **désactivé** (donc aucun clic n'a d'effet). On utilise désormais
+   `execCommand('insertText')` (vrai `InputEvent`) avec repli manuel émettant
+   `beforeinput` + `input` porteurs de `inputType: 'insertText'` et `data`, plus
+   `focus()`, `change`, `blur`.
+2. **Clic réaliste** (`dom.click`) : geste souris complet
+   (`pointerdown/mousedown/pointerup/mouseup`) **puis** un **seul** `el.click()`
+   natif — qui déclenche à la fois le listener Angular **et** l'action par défaut
+   du bouton (`type=submit`), ce qu'un `MouseEvent` synthétique ne fait pas.
+3. **Journalisation fiabilisée** : `appendLog` (storage) sérialise ses écritures.
+   Avant, deux logs rapprochés lisaient la même liste et le second **écrasait** le
+   premier — d'où la disparition de la ligne « Soumission ». Le pipeline journalise
+   maintenant la voie d'envoi, la correspondance du texte écrit et l'état du bouton.
+
+**Logs copiables** : bouton **« Copier les logs »**, et sélection de texte activée
+sur la zone de logs et le rapport de diagnostic. Le diagnostic ajoute les lignes
+`bouton actif : OUI/NON` (détecte un bouton désactivé) et le nombre de caractères
+présents dans le champ.
+
 ## Nouveautés V0.1.4 (le BON bouton d'envoi)
 
-Nouveau diagnostic réel : `bouton générer : OUI (via named)` mais **le prompt se
-colle et rien ne démarre**. Cause : le bouton retenu était le **premier** du DOM
-correspondant à un sélecteur nommé (ex. « Menu Ajouter un contenu multimédia »),
-pas le bouton d'envoi. Corrections :
+`bouton générer : OUI (via named)` mais **le prompt se colle et rien ne démarre**.
+Cause : le bouton retenu était le **premier** du DOM correspondant à un sélecteur
+nommé (ex. bouton de menu), pas le bouton d'envoi. Corrections :
 
 1. **Sélection par score, pas « premier trouvé »** (`dom.scoreSubmitCandidate`) :
    on construit un **ensemble candidat** = sélecteurs nommés ∪ replis structurels
@@ -178,7 +205,7 @@ Chaque maillon renvoie un échec **explicite** (jamais un message générique un
 - Une seule génération à la fois (séquentiel strict).
 - **Jamais** de démarrage annoncé sans confirmation réelle (`QUEUE_GET`).
 
-## Limites connues de V0.1.4
+## Limites connues de V0.1.5
 
 1. **Sélecteurs DOM non validés sur le site réel.** Le DOM de flow.google.com est
    généré dynamiquement (Angular) et n'est pas inspectable hors navigateur
@@ -203,6 +230,11 @@ Chaque maillon renvoie un échec **explicite** (jamais un message générique un
    normale ; la réinjection n'est qu'un filet de sécurité.
 5. **Tests réels sur Quetta/Chrome non exécutés ici** (aucun navigateur
    pilotable dans l'environnement de développement). Voir « Tests ».
+6. **Actionnement non validé sur le site réel** : la saisie compatible Angular
+   (`execCommand('insertText')` + `InputEvent`) et le clic (geste souris + clic
+   natif) sont des **hypothèses raisonnées**, pas une preuve. Si le bouton reste
+   désactivé, la ligne `bouton actif : NON` du diagnostic le confirmera — il
+   faudra alors inspecter les événements réellement attendus par le champ.
 
 ## Tests (état réel)
 
@@ -217,7 +249,7 @@ node tests/queue-simulate.js       # → Passed: 24 / Failed: 0
 node tests/status-simulate.js      # → Passed: 32 / Failed: 0
 node tests/start-flow-simulate.js  # → Passed: 26 / Failed: 0
 node tests/reinject-simulate.js    # → Passed: 16 / Failed: 0
-node tests/submit-simulate.js      # → Passed: 23 / Failed: 0
+node tests/submit-simulate.js      # → Passed: 31 / Failed: 0
 ```
 
 | Suite | Ce qui est testé | Résultat |
@@ -227,7 +259,7 @@ node tests/submit-simulate.js      # → Passed: 23 / Failed: 0
 | `tests/status-simulate.js` | `status.js` : **les 11 scénarios** — URL exacte fournie, Flow sans projet, projet, chargement, content absent, content présent, message sans réponse, API indisponible, aucun onglet/mauvais site, DOM incomplet, erreur de communication | ✅ 32/32 |
 | `tests/start-flow-simulate.js` | Parcours **Démarrer** : aucun prompt, démarrage valide, multi-prompts, refus si page non prête / content absent / sans réponse / API absente / pas d'onglet, **file inactive ≠ démarré**, erreurs de création et de `tabs.query` | ✅ 26/26 |
 | `tests/reinject-simulate.js` | **Réinjection** : double évaluation des scripts, survie de la file d'attente, unicité de l'écouteur de messages, réponse de l'écouteur après réinjection | ✅ 16/16 |
-| `tests/submit-simulate.js` | **Détection du bouton d'envoi** : niveaux nommé/structurel/contextuel, bouton désactivé, repli clavier Entrée, échec explicite (champ vide), **sélection par score** (le bouton-flèche près du champ gagne contre un bouton de barre d'outils), `describeInteractiveElements` | ✅ 23/23 |
+| `tests/submit-simulate.js` | **Actionnement de l'envoi** : niveaux nommé/structurel/contextuel, bouton désactivé, repli clavier Entrée, échec explicite (champ vide), **sélection par score**, **`setPromptText` émet un vrai `input` porteur de `data`**, **`dom.click` fait le geste souris + un seul clic natif**, `describeInteractiveElements` | ✅ 31/31 |
 
 > ⚠️ Ces tests **ne valident pas** le comportement réel de Google Flow (DOM et API
 > simulés). Ils vérifient la logique, pas les sélecteurs du site ni Quetta.

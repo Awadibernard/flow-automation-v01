@@ -93,7 +93,7 @@ function loadStack(world) {
   await new Promise((r) => setTimeout(r, 60));
 
   assert('queue exposée', !!w.win.FlowAutomation.queue);
-  assert('marqueur posé', w.win.__FLOW_AUTOMATION_LOADED__ === '0.1.4', String(w.win.__FLOW_AUTOMATION_LOADED__));
+  assert('marqueur posé', w.win.__FLOW_AUTOMATION_LOADED__ === '0.1.5', String(w.win.__FLOW_AUTOMATION_LOADED__));
   assert('un seul écouteur de messages', w.listeners.length === 1, 'listeners=' + w.listeners.length);
 
   const queueRef = w.win.FlowAutomation.queue;

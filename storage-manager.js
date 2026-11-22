@@ -79,18 +79,31 @@
   /**
    * Ajoute un log (avec déduplication temporelle grossière).
    * Le log est stocké en mémoire + persistance limitée.
+   *
+   * IMPORTANT : les appels sont SÉRIALISÉS. `get -> push -> set` n'est pas
+   * atomique : deux appels rapprochés (ex. « Soumission du prompt » puis
+   * « Génération en cours ») lisaient la MÊME liste et le second écrasait le
+   * premier, ce qui faisait disparaître des logs. On chaîne donc les écritures.
    */
+  let logChain = Promise.resolve();
   async function appendLog(level, message, data) {
-    const logs = await get('logs');
-    logs.push({
-      level: level || 'info',
-      message: String(message),
-      data: data || null,
-      ts: Date.now()
+    logChain = logChain.then(async () => {
+      try {
+        const logs = await get('logs');
+        logs.push({
+          level: level || 'info',
+          message: String(message),
+          data: data || null,
+          ts: Date.now()
+        });
+        // borne la taille
+        const trimmed = logs.length > MAX_LOGS ? logs.slice(-MAX_LOGS) : logs;
+        await set('logs', trimmed);
+      } catch (e) {
+        console.error('[storage] appendLog failed', e);
+      }
     });
-    // borne la taille
-    const trimmed = logs.length > MAX_LOGS ? logs.slice(-MAX_LOGS) : logs;
-    await set('logs', trimmed);
+    return logChain;
   }
 
   /**

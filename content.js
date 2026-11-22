@@ -30,7 +30,7 @@
     console.warn('[content] déjà chargé (v' + window.__FLOW_AUTOMATION_LOADED__ + ') — réinjection ignorée');
     return;
   }
-  window.__FLOW_AUTOMATION_LOADED__ = '0.1.4';
+  window.__FLOW_AUTOMATION_LOADED__ = '0.1.5';
 
   if (typeof window.FlowAutomation === 'undefined') {
     window.FlowAutomation = {};
@@ -87,6 +87,7 @@
     // sélecteur de bouton qui ne correspond pas (on voit ce qui existe).
     let seen = [];
     let submitInfo = { level: null, hasButton: false, best: null, bestScore: null, near: [] };
+    let submitDisabled = null;
     try {
       const c = dom.getSubmitButtonCandidates();
       submitInfo = {
@@ -96,8 +97,16 @@
         bestScore: c.bestScore,
         near: (c.near || []).map((n) => Math.round(n.d) + 'px ' + dom.describeElement(n.el, c.field))
       };
+      // Le bouton d'envoi est-il désactivé ? Indice décisif : si oui, la saisie
+      // n'a pas été acceptée par le modèle (donc l'envoi ne fera rien).
+      if (c.button) {
+        submitDisabled = !!(c.button.disabled ||
+          (c.button.getAttribute && c.button.getAttribute('aria-disabled') === 'true'));
+      }
       seen = dom.describeInteractiveElements(60, c.field);
     } catch (e) { /* DOM partiel */ }
+    let promptLen = null;
+    try { promptLen = dom.getPromptText().length; } catch (e) { /* DOM partiel */ }
     return {
       url: (typeof location !== 'undefined' ? location.href : ''),
       isFlowPage: dom.isFlowPage(),
@@ -109,6 +118,8 @@
       submitLevel: submitInfo.level,
       submitBest: submitInfo.best,
       submitBestScore: submitInfo.bestScore,
+      submitDisabled: submitDisabled,
+      promptLen: promptLen,
       nearPrompt: submitInfo.near,
       seen: seen,
       tiles: snap.count,
@@ -150,14 +161,20 @@
     if (!filled) {
       return { status: 'ERROR', error: 'Impossible d\'écrire dans le champ de prompt', medias: [] };
     }
-    // vérifie que le texte a bien été pris en compte
+    // vérifie que le texte a bien été pris en compte PAR LE MODÈLE (pas seulement
+    // présent dans le DOM) : si le texte diffère, la saisie n'a pas été acceptée
+    // et l'envoi ne produira rien.
     const written = dom.getPromptText();
-    if (written.trim() !== promptText.trim()) {
-      log('warn', 'Le texte du champ ne correspond pas exactement (normal si autocomplétion)');
+    const accepted = written.trim() === promptText.trim();
+    if (accepted) {
+      log('info', 'Prompt écrit (' + written.length + ' caractère(s)) — correspond au texte attendu');
+    } else {
+      log('warn', 'Le texte du champ DIFFÈRE du texte attendu (' + written.length +
+        ' vs ' + promptText.length + ' car.) — la saisie n\'a peut-être pas été acceptée');
     }
 
-    // petit délai pour laisser l'UI réagir (pas de détection à contourner :
-    // simple attente de rendu)
+    // petit délai pour laisser l'UI réagir (attente de rendu, pas de détection
+    // à contourner)
     await sleep(800);
 
     const submit = dom.submitPrompt();
@@ -165,6 +182,9 @@
       return { status: 'ERROR', error: submit.error || 'Soumission impossible', medias: [], diag: submit };
     }
     log('info', 'Soumission du prompt (voie : ' + submit.via + ')');
+    if (submit.reacted) {
+      log('warn', 'Le bouton d\'envoi paraît encore désactivé après remplissage.');
+    }
 
     // 2. GENERATING — attendre la fin réelle
     item.status = 'GENERATING';
@@ -173,11 +193,16 @@
       (generation.getConfig().generationTimeoutMs / 1000) + 's)');
 
     const completion = await generation.waitForCompletion(baseline, signal);
+
     if (completion.cancelled) {
       return { status: 'CANCELLED', error: 'Annulé par l\'utilisateur', medias: [] };
     }
     if (!completion.ok) {
       if (completion.notStarted) {
+        // Aucun signe de génération : on NE relance PAS automatiquement (règle de
+        // fiabilité : jamais de seconde génération après un échec). On signale
+        // honnêtement pour que l'utilisateur réessaie ou corrige le sélecteur.
+        log('error', completion.error);
         return { status: 'ERROR', notStarted: true, error: completion.error, medias: [] };
       }
       return {

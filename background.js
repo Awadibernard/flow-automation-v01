@@ -1,5 +1,5 @@
 /**
- * background.js — Flow Automation V0.1.4
+ * background.js — Flow Automation V0.1.5
  * Service worker MV3.
  *
  * Responsabilités :
@@ -436,7 +436,7 @@ N.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 N.runtime.onInstalled.addListener((details) => {
   const reason = (details && details.reason) || 'unknown';
-  log('info', 'Extension installée / mise à jour (V0.1.4), raison : ' + reason);
+  log('info', 'Extension installée / mise à jour (V0.1.5), raison : ' + reason);
   // force = true : une mise à jour doit remplacer des sélecteurs périmés.
   initSelectors(true);
 });
@@ -444,4 +444,4 @@ N.runtime.onInstalled.addListener((details) => {
 // Au démarrage du worker on ne force pas : on ne réécrit que si le fichier livré
 // a changé (comparaison d'empreinte), pour préserver un ajustement manuel.
 initSelectors(false);
-log('info', 'Service worker Flow Automation V0.1.4 démarré');
+log('info', 'Service worker Flow Automation V0.1.5 démarré');
