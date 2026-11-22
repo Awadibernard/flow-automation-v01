@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Automation V0.1</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Flow Automation <span class="badge">V0.1</span></h1>
+    <div id="page-status" class="status">Vérification…</div>
+  </header>
+
+  <main>
+    <!-- Zone de saisie -->
+    <section class="card">
+      <label for="prompts">Prompts (un par ligne)</label>
+      <textarea id="prompts" rows="5" placeholder="Un prompt par ligne&#10;Exemple : A cat in a spaceship, cinematic light"></textarea>
+    </section>
+
+    <!-- Paramètres -->
+    <section class="card" id="settings-section">
+      <details>
+        <summary>Paramètres</summary>
+        <div class="setting-row">
+          <label for="set-model">Modèle</label>
+          <input id="set-model" type="text" placeholder="Laisser vide = défaut">
+        </div>
+        <div class="setting-row">
+          <label for="set-ratio">Format / ratio</label>
+          <input id="set-ratio" type="text" placeholder="ex : 16:9">
+        </div>
+        <div class="setting-row">
+          <label for="set-count">Nombre de résultats</label>
+          <input id="set-count" type="number" min="1" max="4" placeholder="ex : 1">
+        </div>
+        <div class="setting-row">
+          <label for="set-folder">Dossier de téléchargement</label>
+          <input id="set-folder" type="text" value="flow-automation">
+        </div>
+        <p class="hint">Les paramètres Modèle / Ratio / Nombre ne sont PAS encore appliqués
+        à Google Flow dans cette version. Ils seront vérifiés avant chaque application.</p>
+      </details>
+    </section>
+
+    <!-- Contrôles -->
+    <section class="controls">
+      <button id="btn-start" class="primary">Démarrer</button>
+      <button id="btn-pause" disabled>Pause</button>
+      <button id="btn-resume" disabled>Reprendre</button>
+      <button id="btn-cancel" disabled>Annuler</button>
+    </section>
+
+    <!-- Progression -->
+    <section class="card">
+      <div class="progress-row">
+        <span id="queue-progress">0 / 0</span>
+        <span id="current-prompt">—</span>
+      </div>
+    </section>
+
+    <!-- Liste des prompts -->
+    <section class="card" id="queue-list">
+      <h2>File d'attente</h2>
+      <ul id="queue-items"></ul>
+    </section>
+
+    <!-- Logs -->
+    <section class="card">
+      <details open>
+        <summary>Logs</summary>
+        <pre id="log-area"></pre>
+      </details>
+    </section>
+  </main>
+
+  <script src="storage-manager.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
