@@ -30,7 +30,7 @@
     console.warn('[content] déjà chargé (v' + window.__FLOW_AUTOMATION_LOADED__ + ') — réinjection ignorée');
     return;
   }
-  window.__FLOW_AUTOMATION_LOADED__ = '0.1.3';
+  window.__FLOW_AUTOMATION_LOADED__ = '0.1.4';
 
   if (typeof window.FlowAutomation === 'undefined') {
     window.FlowAutomation = {};
@@ -86,12 +86,18 @@
     // Éléments interactifs visibles : indispensable pour diagnostiquer un
     // sélecteur de bouton qui ne correspond pas (on voit ce qui existe).
     let seen = [];
-    try { seen = dom.describeInteractiveElements(12); } catch (e) { seen = []; }
-    let submitInfo = { level: null, hasButton: false };
+    let submitInfo = { level: null, hasButton: false, best: null, bestScore: null, near: [] };
     try {
       const c = dom.getSubmitButtonCandidates();
-      submitInfo = { level: c.level, hasButton: !!c.button };
-    } catch (e) { /* ignore */ }
+      submitInfo = {
+        level: c.level,
+        hasButton: !!c.button,
+        best: c.button ? dom.describeElement(c.button, c.field) : null,
+        bestScore: c.bestScore,
+        near: (c.near || []).map((n) => Math.round(n.d) + 'px ' + dom.describeElement(n.el, c.field))
+      };
+      seen = dom.describeInteractiveElements(60, c.field);
+    } catch (e) { /* DOM partiel */ }
     return {
       url: (typeof location !== 'undefined' ? location.href : ''),
       isFlowPage: dom.isFlowPage(),
@@ -101,6 +107,9 @@
       hasPrompt: dom.hasPromptTextarea(),
       hasSubmit: dom.hasSubmitButton(),
       submitLevel: submitInfo.level,
+      submitBest: submitInfo.best,
+      submitBestScore: submitInfo.bestScore,
+      nearPrompt: submitInfo.near,
       seen: seen,
       tiles: snap.count,
       medias: snap.medias.length,
@@ -168,6 +177,9 @@
       return { status: 'CANCELLED', error: 'Annulé par l\'utilisateur', medias: [] };
     }
     if (!completion.ok) {
+      if (completion.notStarted) {
+        return { status: 'ERROR', notStarted: true, error: completion.error, medias: [] };
+      }
       return {
         status: completion.timeout ? 'TIMEOUT' : 'ERROR',
         error: completion.error || 'Échec de détection du résultat',

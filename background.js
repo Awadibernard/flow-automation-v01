@@ -1,5 +1,5 @@
 /**
- * background.js — Flow Automation V0.1.3
+ * background.js — Flow Automation V0.1.4
  * Service worker MV3.
  *
  * Responsabilités :
@@ -349,7 +349,7 @@ async function initSelectors(force) {
       tileMedia: { value: 'video, img', confidence: 'medium' }
     },
     options: {},
-    durations: { generationTimeoutMs: 180000, pollIntervalMs: 2000, tileStabilityChecks: 3, tileStabilityDelayMs: 1500 }
+    durations: { generationTimeoutMs: 180000, generationStartMs: 12000, pollIntervalMs: 2000, tileStabilityChecks: 3, tileStabilityDelayMs: 1500 }
   };
   try {
     let selectors = null;
@@ -436,7 +436,7 @@ N.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 N.runtime.onInstalled.addListener((details) => {
   const reason = (details && details.reason) || 'unknown';
-  log('info', 'Extension installée / mise à jour (V0.1.3), raison : ' + reason);
+  log('info', 'Extension installée / mise à jour (V0.1.4), raison : ' + reason);
   // force = true : une mise à jour doit remplacer des sélecteurs périmés.
   initSelectors(true);
 });
@@ -444,4 +444,4 @@ N.runtime.onInstalled.addListener((details) => {
 // Au démarrage du worker on ne force pas : on ne réécrit que si le fichier livré
 // a changé (comparaison d'empreinte), pour préserver un ajustement manuel.
 initSelectors(false);
-log('info', 'Service worker Flow Automation V0.1.3 démarré');
+log('info', 'Service worker Flow Automation V0.1.4 démarré');

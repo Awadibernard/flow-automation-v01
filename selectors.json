@@ -75,6 +75,7 @@
   },
   "durations": {
     "generationTimeoutMs": 180000,
+    "generationStartMs": 12000,
     "pollIntervalMs": 2000,
     "tileStabilityChecks": 3,
     "tileStabilityDelayMs": 1500

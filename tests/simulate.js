@@ -133,6 +133,20 @@ function assert(name, cond, detail) {
   const comp2 = await generation.waitForCompletion(baseline2, { cancelled: false });
   assert('waitForCompletion timeout sans nouvelle tuile', comp2.ok === false && comp2.timeout === true);
 
+  // test échec précoce : AUCUN signe de génération (pas de nouvelle tuile, pas de
+  // progression, médias identiques au baseline) -> notStarted, sans attendre 180 s.
+  generation.setConfig({ generationStartMs: 200, generationTimeoutMs: 5000, pollIntervalMs: 50 });
+  const baselineNS = { count: 1, medias: [{ url: 'https://x.googlevideo.com/v1.mp4', type: 'video' }] };
+  const compNS = await generation.waitForCompletion(baselineNS, { cancelled: false });
+  assert('waitForCompletion notStarted (aucun signe de démarrage)',
+    compNS.ok === false && compNS.notStarted === true, JSON.stringify(compNS));
+
+  // si une nouvelle tuile apparaît, il NE doit PAS conclure à un non-démarrage
+  generation.setConfig({ generationStartMs: 200, generationTimeoutMs: 3000, pollIntervalMs: 50, tileStabilityChecks: 2 });
+  const compSig = await generation.waitForCompletion({ count: 0, medias: [] }, { cancelled: false });
+  assert('une nouvelle tuile n\'est pas un non-démarrage',
+    compSig.notStarted !== true, JSON.stringify(compSig));
+
   // test cancelled
   const comp3 = await generation.waitForCompletion(baseline, { cancelled: true });
   assert('waitForCompletion cancelled', comp3.ok === false && comp3.cancelled === true);

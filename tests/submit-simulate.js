@@ -37,7 +37,8 @@ function el(tag, opts) {
     getBoundingClientRect() { return this.rect; },
     click() { this.clicked++; },
     dispatchEvent(e) { this._events.push(e); return true; },
-    focus() {}
+    focus() {},
+    querySelector(sel) { return sel === 'mat-icon' ? (opts.icon || null) : null; }
   };
 }
 
@@ -59,7 +60,7 @@ const dom = global.FlowAutomation.dom;
 const PROMPT_SEL = 'FAKE_PROMPT';
 const NAMED_SEL = 'FAKE_NAMED';
 const CONTEXT_SEL = 'button, [role="button"], a[href]';
-const DESCRIBE_SEL = 'button, [role="button"], a[href], mat-icon, [contenteditable]';
+const DESCRIBE_SEL = 'button, [role="button"], a[href], mat-icon, input, textarea, [contenteditable]';
 
 let passed = 0, failed = 0;
 function assert(name, cond, detail) {
@@ -195,10 +196,58 @@ function assert(name, cond, detail) {
     const b = el('button', { attrs: { 'aria-label': 'Send' }, text: '' });
     const ic = el('mat-icon', { text: 'arrow_forward' });
     map.qsa[DESCRIBE_SEL] = [b, ic];
-    const desc = dom.describeInteractiveElements(12);
+    const desc = dom.describeInteractiveElements(60);
     assert('au moins 2 éléments décrits', desc.length === 2, JSON.stringify(desc));
     assert('le bouton expose son aria-label', /button\[aria-label="Send"\]/.test(desc[0]), desc[0]);
     assert('l\'icône mat-icon est décrite', /mat-icon/.test(desc[1]), desc[1]);
+  }
+
+  // --- 9. BUG RÉEL : bouton de barre d'outils nommé ≠ bouton d'envoi ---
+  // Sur Flow réel, le bouton nommé trouvé était en réalité celui du menu
+  // (plus_vert / Accueil / Ajouter), d'où « prompt collé mais rien ne part ».
+  console.log('\n--- 9. Sélection par score : le bon bouton gagne ---');
+  {
+    reset();
+    const field = el('div', { attrs: { contenteditable: 'true' }, text: 'mon prompt',
+      rect: { left: 100, top: 300, width: 300, height: 60 } });
+    map.qs[PROMPT_SEL] = field;
+
+    const menu = el('button', { attrs: { 'aria-label': "Plus d'options" },
+      rect: { left: 100, top: 100, width: 24, height: 24 },
+      icon: el('mat-icon', { text: 'more_vert' }) });
+    const arrow = el('button', {
+      rect: { left: 410, top: 320, width: 32, height: 32 },
+      icon: el('mat-icon', { text: 'arrow_forward' }) });
+
+    map.qsa[NAMED_SEL] = [menu, arrow];      // les deux correspondent au sélecteur nommé
+    map.qsa[CONTEXT_SEL] = [menu, arrow];
+
+    const c = dom.getSubmitButtonCandidates();
+    assert('le bouton flèche est retenu (pas le menu)',
+      c.button === arrow, c.button === menu ? 'menu retenu' : (c.button && c.button.getAttribute('aria-label')) || 'aucun');
+    const s = dom.submitPrompt();
+    assert('soumission via le bouton flèche', s.ok === true && s.via === 'button');
+    assert('la flèche a été cliquée', arrow.clicked === 1 && menu.clicked === 0,
+      'arrow=' + arrow.clicked + ' menu=' + menu.clicked);
+  }
+
+  // --- 10. Union des candidats : élément cliquable hors sélecteurs nommés ---
+  console.log('\n--- 10. Le candidat proche du champ entre dans l\'ensemble ---');
+  {
+    reset();
+    const field = el('div', { attrs: { contenteditable: 'true' }, text: 'x',
+      rect: { left: 100, top: 300, width: 300, height: 60 } });
+    map.qs[PROMPT_SEL] = field;
+    const toolbar = el('button', { attrs: { 'aria-label': 'Rechercher' },
+      rect: { left: 10, top: 10, width: 24, height: 24 } });
+    const real = el('button', { rect: { left: 420, top: 320, width: 32, height: 32 },
+      icon: el('mat-icon', { text: 'send' }) });
+    map.qsa[NAMED_SEL] = [toolbar]; // seul le bouton de barre d'outils est « nommé »
+    map.qsa[CONTEXT_SEL] = [toolbar, real];
+
+    const c = dom.getSubmitButtonCandidates();
+    assert('le vrai bouton (proche, icône send) gagne',
+      c.button === real, c.button === toolbar ? 'barre d\'outils retenue' : 'aucun/autre');
   }
 
   console.log('\n--- Résultat ---');

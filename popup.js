@@ -1,5 +1,5 @@
 /**
- * popup.js — Flow Automation V0.1.3
+ * popup.js — Flow Automation V0.1.4
  *
  * Chaîne réelle : Popup -> Background -> Onglet actif -> Content script -> DOM.
  * Aucun échec silencieux : chaque étape est journalisée et affichée.
@@ -255,7 +255,7 @@ async function checkFlowPage() {
 function fmtDiag(r) {
   const L = [];
   const yn = (v) => (v ? 'OUI' : 'NON');
-  L.push('Flow Automation V0.1.3 — Diagnostic');
+  L.push('Flow Automation V0.1.4 — Diagnostic');
   L.push('Date : ' + new Date(r.ts || Date.now()).toLocaleString());
   L.push('');
   L.push('== API ==');
@@ -291,8 +291,17 @@ function fmtDiag(r) {
     L.push('champ prompt   : ' + yn(r.pageState.hasPrompt));
     L.push('bouton générer : ' + yn(r.pageState.hasSubmit) +
       (r.pageState.submitLevel ? ' (via ' + r.pageState.submitLevel + ')' : ''));
+    if (r.pageState.submitBest) {
+      L.push('bouton retenu  : ' + r.pageState.submitBest +
+        (r.pageState.submitBestScore != null ? '  [score ' + r.pageState.submitBestScore + ']' : ''));
+    }
     L.push('tuiles         : ' + r.pageState.tiles);
     L.push('médias         : ' + r.pageState.medias);
+    if (r.pageState.nearPrompt && r.pageState.nearPrompt.length) {
+      L.push('');
+      L.push('== BOUTONS PRÈS DU CHAMP PROMPT (<400px) ==');
+      r.pageState.nearPrompt.forEach((s, i) => L.push('  [' + i + '] ' + s));
+    }
     if (r.pageState.seen && r.pageState.seen.length) {
       L.push('');
       L.push('== ÉLÉMENTS INTERACTIFS VISIBLES ==');

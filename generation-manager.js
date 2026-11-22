@@ -27,6 +27,7 @@
   // Durées par défaut (surchargées via setConfig depuis selectors.json)
   let CFG = {
     generationTimeoutMs: 180000,
+    generationStartMs: 12000,
     pollIntervalMs: 2000,
     tileStabilityChecks: 3,
     tileStabilityDelayMs: 1500
@@ -80,6 +81,9 @@
    */
   generation.waitForCompletion = async function (baseline, signal) {
     const timeoutAt = Date.now() + CFG.generationTimeoutMs;
+    const startAt = Date.now();
+    const startDeadline = startAt + (CFG.generationStartMs || 12000);
+    let sawSignal = false;
     const baseCount = (baseline && baseline.count) || 0;
     let noProgressCount = 0;
     let stableCount = 0;
@@ -96,6 +100,13 @@
 
       // Nouvelle tuile par rapport au baseline ?
       const hasNewTile = snap.count > baseCount;
+
+      // Y a-t-il le moindre signe que la génération a démarré ?
+      //  - une nouvelle tuile est apparue ;
+      //  - un indicateur de progression (spinner/barre/pourcentage) est visible ;
+      //  - le nombre de médias a augmenté par rapport au baseline.
+      const baseMedias = (baseline && baseline.medias ? baseline.medias.length : 0);
+      if (hasNewTile || hasProgress || snap.medias.length > baseMedias) sawSignal = true;
 
       // Stabilité des médias (même liste de signatures sur plusieurs contrôles)
       const json = JSON.stringify(snap.medias);
@@ -120,6 +131,20 @@
           lastMedias.length > 0 &&
           stableCount >= CFG.tileStabilityChecks) {
         return { ok: true, medias: lastMedias, timeout: false, error: null };
+      }
+
+      // Échec précoce : après `generationStartMs`, AUCUN signe de génération
+      // (le clic/Entrée précédent n'a rien déclenché). On échoue franchement au
+      // lieu d'attendre le timeout complet de 180 s.
+      if (!sawSignal && Date.now() > startDeadline) {
+        return {
+          ok: false,
+          medias: [],
+          timeout: false,
+          notStarted: true,
+          error: 'La génération n\'a pas démarré (~' + Math.round((CFG.generationStartMs || 12000) / 1000) +
+            's après la soumission). Le bouton d\'envoi n\'a probablement pas été actionné.'
+        };
       }
 
       await sleep(CFG.pollIntervalMs);

@@ -1,4 +1,4 @@
-# Flow Automation V0.1.3 (prototype)
+# Flow Automation V0.1.4 (prototype)
 
 Extension Chrome Manifest V3 indépendante pour automatiser la génération de contenu
 sur [Google Flow](https://flow.google.com) — de façon **transparente et fiable**,
@@ -7,38 +7,44 @@ sans contournement, sans serveur externe, sans secret de l'extension d'origine.
 > **Cible prioritaire : Quetta Browser sur Android 12** (fork Chromium MV3).
 > Chrome Desktop reste supporté.
 
-> V0.1.2 a rendu la réinjection **idempotente** et les sélecteurs **rafraîchis** à
-> la mise à jour. V0.1.3 = **détection robuste du bouton d'envoi** + repli clavier,
-> et diagnostic qui **liste les éléments interactifs** de la page.
+> V0.1.3 détectait un **bouton** mais pas **le bon** (un bouton de barre d'outils
+> détournait l'envoi). V0.1.4 = **sélection par score** du vrai bouton d'envoi
+> (icône flèche + position près du champ), diagnostic complet, et **échec rapide**
+> si la génération ne démarre pas.
 
 ---
 
+## Nouveautés V0.1.4 (le BON bouton d'envoi)
+
+Nouveau diagnostic réel : `bouton générer : OUI (via named)` mais **le prompt se
+colle et rien ne démarre**. Cause : le bouton retenu était le **premier** du DOM
+correspondant à un sélecteur nommé (ex. « Menu Ajouter un contenu multimédia »),
+pas le bouton d'envoi. Corrections :
+
+1. **Sélection par score, pas « premier trouvé »** (`dom.scoreSubmitCandidate`) :
+   on construit un **ensemble candidat** = sélecteurs nommés ∪ replis structurels
+   ∪ éléments cliquables **proches du champ prompt** (< 400 px), puis on retient le
+   meilleur score. Score favorise : icône **flèche/envoi** (`arrow_forward`, `send`,
+   `enter`), libellé `send|submit|arrow|enter`, position **à droite du champ** et
+   dans sa bande verticale, proximité. Score pénalise : `add|search|filter|help|
+   home|more|menu|delete|download|...` et les boutons `disabled`.
+2. **Détection d'un non-démarrage** : après soumission, si **aucun signe** de
+   génération n'apparaît (pas de nouvelle tuile, pas de progression, nombre de
+   médias inchangé) pendant `generationStartMs` (12 s), on échoue **vite et
+   franchement** (« La génération n'a pas démarré… bouton d'envoi probablement pas
+   actionné ») au lieu d'attendre le timeout complet de 180 s.
+3. **Diagnostic complet** : section **BOUTONS PRÈS DU CHAMP PROMPT (<400px)**
+   (distance + description), ligne **bouton retenu** (description + score), et
+   liste **ÉLÉMENTS INTERACTIFS VISIBLES** complète (60 éléments, champ prompt
+   marqué `<<< PROMPT`).
+
 ## Nouveautés V0.1.3 (détection du bouton d'envoi)
 
-Sur le projet réel, le diagnostic renvoyait `bouton générer : NON` alors que le
-champ prompt était détecté. Les sélecteurs nommés (`jsaction*=submit`, etc.) ne
-correspondaient à rien sur le site. Correction :
-
-1. **Détection du bouton en 3 niveaux** (du plus fiable au plus large) :
-   - **nommé** : `data-test-id`/`aria-label` = `submit|send|generate|create`,
-     `jsaction*=submit`, `type=submit` ;
-   - **structurel** : `form button:not([disabled])`, `[role=button]`,
-     `button:has(mat-icon)`, `button:has(svg/i)` — Flow utilise **Angular Material**
-     (`<button class="flow-button-*">` avec `<mat-icon>`) ;
-   - **contextuel** : si un seul élément cliquable visible, ou le bouton visible
-     le plus **proche du champ prompt** (< 400 px).
-   Les boutons `disabled` sont écartés à chaque niveau.
-2. **Repli clavier « Entrée »** : si aucun bouton n'est identifiable **mais que le
-   champ contient du texte**, `dom.submitPrompt()` envoie `keydown/keypress/keyup`
-   `Enter` sur le champ (comportement courant des zones de saisie de type chat).
-   Le repli **ne s'applique jamais** à un champ vide (on ne « clique pas dans le vide »).
-3. **Diagnostic enrichi** : la section PAGE indique la **voie** de détection
-   (`bouton générer : NON (via named)`) et une section
-   **ÉLÉMENTS INTERACTIFS VISIBLES** liste les `button / [role=button] / a / mat-icon`
-   réellement présents (avec `aria-label`, `data-test-id`, `jsaction`, texte).
-   Objectif : **ne plus deviner** — on voit ce qui existe pour fixer le sélecteur.
-
-`selectors.json` passe en **version 2** (familles élargies + `fallbacks`).
+Premier correctif sur le bouton : détection en 3 niveaux (nommé / structurel /
+contextuel), **repli clavier « Entrée »** quand le champ est rempli mais que le
+bouton n'est pas identifiable (jamais sur champ vide), et première version du
+diagnostic listant les éléments interactifs. `selectors.json` v2 (familles
+élargies + `fallbacks`).
 
 ## Correctifs V0.1.2
 
@@ -172,19 +178,25 @@ Chaque maillon renvoie un échec **explicite** (jamais un message générique un
 - Une seule génération à la fois (séquentiel strict).
 - **Jamais** de démarrage annoncé sans confirmation réelle (`QUEUE_GET`).
 
-## Limites connues de V0.1.3
+## Limites connues de V0.1.4
 
 1. **Sélecteurs DOM non validés sur le site réel.** Le DOM de flow.google.com est
    généré dynamiquement (Angular) et n'est pas inspectable hors navigateur
    connecté. Les sélecteurs (`selectors.json`) sont des hypothèses documentées
-   (`confidence`). Le bouton d'envoi dispose désormais de **3 niveaux de détection
-   + repli Entrée**, mais si `hasSubmit = NON`, la section **ÉLÉMENTS INTERACTIFS
-   VISIBLES** du diagnostic permet de fixer le sélecteur exact sans deviner.
+   (`confidence`). Le bouton d'envoi est choisi par **score** (icône flèche +
+   position près du champ) parmi un ensemble candidat élargi, avec **repli Entrée** ;
+   le diagnostic affiche **le bouton retenu**, **son score** et les **boutons près
+   du champ** pour fixer le sélecteur exact sans deviner. Si le bon bouton n'est ni
+   nommé ni proche du champ, un ajustement manuel de `selectors.json` reste possible.
 2. **Paramètres Modèle/Ratio/Nombre non appliqués** : présents dans l'UI et
    persistés, mais non appliqués à Google Flow dans cette version.
 3. **Vérification d'accès média** : le `fetch` du content script peut être bloqué
    par CORS ; le téléchargement est alors tenté directement (le background a les
    permissions host).
+4. **Détection de non-démarrage** : heuristique (aucune nouvelle tuile / progression
+   / média pendant 12 s). Un délai serveur inhabituellement long avant le premier
+   signe visuel pourrait déclencher un faux « non démarré » ; la valeur
+   `generationStartMs` est réglable dans `selectors.json`.
 4. **Réinjection du content script** : dépend de `chrome.scripting.executeScript`.
    Si Quetta ne l'expose pas, le diagnostic l'affiche (`scripting: NON`,
    `injectError`). La déclaration `content_scripts` du manifeste reste la voie
@@ -200,22 +212,22 @@ Six suites de tests unitaires **simulés** existent et ont été exécutées ave
 Node.js (hors navigateur) :
 
 ```bash
-node tests/simulate.js             # → Passed: 13 / Failed: 0
+node tests/simulate.js             # → Passed: 15 / Failed: 0
 node tests/queue-simulate.js       # → Passed: 24 / Failed: 0
 node tests/status-simulate.js      # → Passed: 32 / Failed: 0
 node tests/start-flow-simulate.js  # → Passed: 26 / Failed: 0
 node tests/reinject-simulate.js    # → Passed: 16 / Failed: 0
-node tests/submit-simulate.js      # → Passed: 19 / Failed: 0
+node tests/submit-simulate.js      # → Passed: 23 / Failed: 0
 ```
 
 | Suite | Ce qui est testé | Résultat |
 |---|---|---|
-| `tests/simulate.js` | `flow-dom` : détection de page, lecture/écriture du prompt ; `generation-manager` : snapshot, `waitForCompletion` (ok/timeout/annulé), `checkMediaAccess` | ✅ 13/13 |
+| `tests/simulate.js` | `flow-dom` : détection de page, lecture/écriture du prompt ; `generation-manager` : snapshot, `waitForCompletion` (ok/timeout/annulé/**non-démarré**), `checkMediaAccess` | ✅ 15/15 |
 | `tests/queue-simulate.js` | `download` : slugify, buildFilename, vérification d'accès (CORS/HTTP) ; `queue` : création, persistance, exécution séquentielle, restauration, pause/reprise | ✅ 24/24 |
 | `tests/status-simulate.js` | `status.js` : **les 11 scénarios** — URL exacte fournie, Flow sans projet, projet, chargement, content absent, content présent, message sans réponse, API indisponible, aucun onglet/mauvais site, DOM incomplet, erreur de communication | ✅ 32/32 |
 | `tests/start-flow-simulate.js` | Parcours **Démarrer** : aucun prompt, démarrage valide, multi-prompts, refus si page non prête / content absent / sans réponse / API absente / pas d'onglet, **file inactive ≠ démarré**, erreurs de création et de `tabs.query` | ✅ 26/26 |
 | `tests/reinject-simulate.js` | **Réinjection** : double évaluation des scripts, survie de la file d'attente, unicité de l'écouteur de messages, réponse de l'écouteur après réinjection | ✅ 16/16 |
-| `tests/submit-simulate.js` | **Détection du bouton d'envoi** : niveaux nommé/structurel/contextuel, bouton désactivé écarté, repli clavier Entrée (champ rempli), échec explicite (champ vide), `describeInteractiveElements` | ✅ 19/19 |
+| `tests/submit-simulate.js` | **Détection du bouton d'envoi** : niveaux nommé/structurel/contextuel, bouton désactivé, repli clavier Entrée, échec explicite (champ vide), **sélection par score** (le bouton-flèche près du champ gagne contre un bouton de barre d'outils), `describeInteractiveElements` | ✅ 23/23 |
 
 > ⚠️ Ces tests **ne valident pas** le comportement réel de Google Flow (DOM et API
 > simulés). Ils vérifient la logique, pas les sélecteurs du site ni Quetta.

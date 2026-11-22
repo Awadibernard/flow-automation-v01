@@ -244,71 +244,146 @@
 
   // --- Boutons ---
 
+  // Rayon (px) au-delà duquel un bouton n'est plus considéré « proche du champ ».
+  const NEAR_PX = 400;
+
   /**
-   * True si un élément est actionnable comme bouton (aria/role/tag).
+   * Nom d'icône lisible d'un élément (texte court de <mat-icon>, ex. 'send',
+   * 'arrow_forward'). Retourne '' si le contenu n'est pas un nom d'icône.
    */
-  dom.isButtonLike = function (el) {
-    if (!el) return false;
-    const tag = (el.tagName || '').toLowerCase();
-    if (tag === 'button' || tag === 'a') return true;
-    if (el.getAttribute && (el.getAttribute('role') === 'button' || el.getAttribute('type') === 'submit')) return true;
-    return false;
+  dom.getIconName = function (el) {
+    if (!el) return '';
+    const t = (el.textContent || '').trim();
+    return /^[a-z0-9_]{2,40}$/i.test(t) ? t.toLowerCase() : '';
   };
 
   /**
-   * Candidats au rôle de bouton d'envoi, en 3 niveaux (du plus fiable au plus large) :
-   *  1. familles nommées (selectors.json) — submit/send/generate/create/type=submit ;
-   *  2. replis structurels — form button:not([disabled]), role=button, :has(mat-icon/svg). ;
-   *  3. dernier recours — 1 seul bouton visible, ou bouton visible adjacent au champ prompt.
-   * Retourne { level, all, visible, button, field }.
+   * Libellé exploitable d'un bouton : aria-label, title, data-test-id, texte,
+   * puis nom d'icône interne. Tout en minuscules.
+   */
+  dom.getButtonLabel = function (el) {
+    if (!el) return '';
+    const g = (k) => ((el.getAttribute && el.getAttribute(k)) || '');
+    const inner = el.querySelector ? el.querySelector('mat-icon') : null;
+    return [g('aria-label'), g('title'), g('data-test-id') || g('data-testid'),
+      (el.textContent || '').trim(), dom.getIconName(inner)]
+      .filter(Boolean).join(' ').toLowerCase();
+  };
+
+  /**
+   * Distance minimale (px) entre un élément et la zone du champ de prompt.
+   * Infinity si la géométrie n'est pas disponible.
+   */
+  function distanceToField(el, field) {
+    if (!el || !field || !el.getBoundingClientRect || !field.getBoundingClientRect) return Infinity;
+    const b = el.getBoundingClientRect();
+    const f = field.getBoundingClientRect();
+    if (!b || !f || (!b.width && !b.height)) return Infinity;
+    const dx = Math.max(f.left - (b.left + b.width), b.left - (f.left + f.width), 0);
+    const dy = Math.max(f.top - (b.top + b.height), b.top - (f.top + f.height), 0);
+    return Math.hypot(dx, dy);
+  }
+
+  /**
+   * Score d'un candidat comme bouton d'ENVOI du prompt.
+   * Rapproche : libellé (send/submit/arrow/enter...), nom d'icône, position
+   * (à droite du champ, dans sa bande verticale), proximité ; éloigne les
+   * boutons de barre d'outils (add/search/filter/help/home/more/...).
+   */
+  dom.scoreSubmitCandidate = function (el, field) {
+    if (!el) return -Infinity;
+    const label = dom.getButtonLabel(el);
+    const icon = dom.getIconName(el.querySelector ? el.querySelector('mat-icon') : null);
+    let s = 0;
+
+    if (/send|submit|arrow|enter|prompt|generate|envoyer|créer|creer/i.test(label)) s += 3;
+    if (/send|arrow|enter|submit/i.test(icon)) s += 3;
+
+    if (field && el.getBoundingClientRect && field.getBoundingClientRect) {
+      const b = el.getBoundingClientRect();
+      const f = field.getBoundingClientRect();
+      if (b && f && (b.width || b.height)) {
+        if (b.left >= f.right - 8) s += 2;                // à droite du champ
+        if (b.bottom > f.top && b.top < f.bottom) s += 1; // dans la bande du champ
+        const d = distanceToField(el, field);
+        if (d < 120) s += 2; else if (d < NEAR_PX) s += 1;
+      }
+    }
+
+    if (/add|search|filter|help|home|more|menu|back|close|expand|settings|delete|supprimer|share|download|filtre|accueil|rechercher/i.test(label)) s -= 3;
+    if (el.disabled) s -= 5;
+    return s;
+  };
+
+  /**
+   * Candidats au rôle de bouton d'envoi.
+   *
+   * On construit un ENSEMBLE candidat = (sélecteurs nommés) ∪ (replis
+   * structurels) ∪ (éléments cliquables visibles proches du champ prompt), puis
+   * on retient celui de **meilleur score** (voir scoreSubmitCandidate).
+   *
+   * Pourquoi une union et pas un simple « premier sélecteur non vide » : le
+   * bouton d'envoi réel peut ne porter aucun libellé connnu, tandis qu'un autre
+   * bouton (ex. « Accueil », « Ajouter ») correspond à un sélecteur nommé. Sans
+   * union, ce dernier détournerait l'envoi — c'est exactement le bug observé.
+   *
+   * Retourne { level, all, visible, button, field, bestScore, near }.
    */
   dom.getSubmitButtonCandidates = function () {
     const field = dom.getPromptTextarea();
 
-    // Niveau 1 — sélecteurs nommés
-    let all = dom.qa(S.submitButton).filter((el) => !el.disabled);
-    let level = 'named';
+    // 1. sélecteurs nommés
+    const named = dom.qa(S.submitButton).filter((el) => !el.disabled);
 
-    // Niveau 2 — replis structurels
-    if (!all.length) {
-      level = 'structural';
+    // 2. replis structurels (seulement si aucun nommé)
+    let structural = [];
+    if (!named.length) {
       for (const sel of (S.submitButtonFallbacks || [])) {
         const found = dom.qa(sel).filter((el) => !el.disabled);
-        if (found.length) { all = found; break; }
+        if (found.length) { structural = found; break; }
       }
     }
 
-    let visible = all.filter((el) => dom.isVisible(el));
-    let button = visible[0] || null;
+    const level = named.length ? 'named' : (structural.length ? 'structural' : 'contextual');
 
-    // Niveau 3 — dernier recours contextuel
-    if (!button) {
-      level = 'contextual';
-      const clickable = dom.qa('button, [role="button"], a[href]').filter((el) => dom.isVisible(el) && !el.disabled);
-      if (clickable.length === 1) {
-        button = clickable[0];
-      } else if (field && clickable.length) {
-        const fBox = field.getBoundingClientRect ? field.getBoundingClientRect() : null;
-        if (fBox) {
-          let best = null;
-          let bestDist = Infinity;
-          for (const c of clickable) {
-            const box = c.getBoundingClientRect ? c.getBoundingClientRect() : null;
-            if (!box) continue;
-            // distance entre le centre du bouton et la zone du champ
-            const dx = Math.max(fBox.left - (box.left + box.width), box.left - (fBox.left + fBox.width), 0);
-            const dy = Math.max(fBox.top - (box.top + box.height), box.top - (fBox.top + fBox.height), 0);
-            const d = Math.hypot(dx, dy);
-            if (d < bestDist) { bestDist = d; best = c; }
-          }
-          // seulement si le bouton est proche du champ (< 400 px)
-          if (best && bestDist < 400) button = best;
-        }
-      }
-      if (button) visible = [button];
+    // 3. éléments cliquables visibles autour du champ prompt
+    const clickable = dom.qa('button, [role="button"], a[href]')
+      .filter((el) => dom.isVisible(el) && !el.disabled);
+    let near = [];
+    if (field) {
+      near = clickable
+        .map((el) => ({ el, d: distanceToField(el, field) }))
+        .filter((x) => x.d < NEAR_PX)
+        .sort((a, b) => a.d - b.d);
     }
 
-    return { level, all, visible, button: button || null, field };
+    // Ensemble candidat (dédupliqué)
+    const set = new Set();
+    const addVisible = (arr) => (arr || []).forEach((el) => { if (el && dom.isVisible(el)) set.add(el); });
+    addVisible(named);
+    addVisible(structural);
+    near.forEach((x) => set.add(x.el));
+
+    let candidates = Array.from(set);
+    // Dernier recours : tous les cliquables visibles, sinon nommés/structurels.
+    if (!candidates.length) {
+      candidates = clickable.length ? clickable : (named.length ? named : structural);
+    }
+
+    // Sélection par score (meilleur candidat)
+    let button = null;
+    let bestScore = null;
+    if (candidates.length) {
+      const scored = candidates
+        .map((el) => ({ el, score: dom.scoreSubmitCandidate(el, field) }))
+        .sort((a, b) => b.score - a.score);
+      button = scored[0].el;
+      bestScore = scored[0].score;
+    }
+
+    const visible = candidates.filter((el) => dom.isVisible(el));
+
+    return { level, all: named.concat(structural), visible, button: button || null, field, bestScore, near: near.slice(0, 8) };
   };
 
   /**
@@ -328,30 +403,46 @@
   };
 
   /**
-   * Décrit de façon concise les éléments interactifs visibles : sert au
-   * diagnostic pour comprendre POURQUOI un sélecteur ne correspond pas.
-   * Retourne une liste de chaînes 'tag[attrs]{texte}'.
+   * Décrit un élément en une chaîne 'tag[attrs]{texte}'. Le champ prompt est
+   * marqué « <<< PROMPT ». Utilisé par le diagnostic.
    */
-  dom.describeInteractiveElements = function (limit) {
+  dom.describeElement = function (el, field) {
+    if (!el) return '';
+    const f = field || dom.getPromptTextarea();
+    const tag = (el.tagName || '').toLowerCase();
+    const attrs = [];
+    const al = el.getAttribute && el.getAttribute('aria-label');
+    const dt = el.getAttribute && (el.getAttribute('data-test-id') || el.getAttribute('data-testid'));
+    const ja = el.getAttribute && el.getAttribute('jsaction');
+    const ty = el.getAttribute && el.getAttribute('type');
+    const ph = el.getAttribute && el.getAttribute('placeholder');
+    if (al) attrs.push('aria-label="' + String(al).slice(0, 60) + '"');
+    if (dt) attrs.push('data-test-id="' + String(dt).slice(0, 40) + '"');
+    if (ja) attrs.push('jsaction="' + String(ja).slice(0, 50) + '"');
+    if (ty) attrs.push('type="' + ty + '"');
+    if (ph) attrs.push('placeholder="' + String(ph).slice(0, 40) + '"');
+    const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+    const isField = (el === f) ||
+      (el.getAttribute && el.getAttribute('contenteditable') === 'true');
+    return tag + (attrs.length ? '[' + attrs.join(' ') + ']' : '') +
+      (txt ? '{' + txt + '}' : '') + (isField ? '   <<< PROMPT' : '');
+  };
+
+  /**
+   * Décrit de façon concise les éléments interactifs visibles : sert au
+   * diagnostic pour comprendre POURQUOI un sélecteur ne correspond pas et
+   * pour repérer le bouton d'envoi réel. Retourne une liste de chaînes.
+   */
+  dom.describeInteractiveElements = function (limit, field) {
     const out = [];
-    const max = limit || 12;
+    const max = limit || 60;
+    const f = field || dom.getPromptTextarea();
     let els = [];
-    try { els = dom.qa('button, [role="button"], a[href], mat-icon, [contenteditable]'); }
+    try { els = dom.qa('button, [role="button"], a[href], mat-icon, input, textarea, [contenteditable]'); }
     catch (e) { return out; }
     for (const el of els) {
       if (!dom.isVisible(el)) continue;
-      const tag = (el.tagName || '').toLowerCase();
-      const attrs = [];
-      const al = el.getAttribute && el.getAttribute('aria-label');
-      const dt = el.getAttribute && (el.getAttribute('data-test-id') || el.getAttribute('data-testid'));
-      const ja = el.getAttribute && el.getAttribute('jsaction');
-      const ty = el.getAttribute && el.getAttribute('type');
-      if (al) attrs.push('aria-label="' + String(al).slice(0, 60) + '"');
-      if (dt) attrs.push('data-test-id="' + String(dt).slice(0, 40) + '"');
-      if (ja) attrs.push('jsaction="' + String(ja).slice(0, 50) + '"');
-      if (ty) attrs.push('type="' + ty + '"');
-      const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
-      out.push(tag + (attrs.length ? '[' + attrs.join(' ') + ']' : '') + (txt ? '{' + txt + '}' : ''));
+      out.push(dom.describeElement(el, f));
       if (out.length >= max) break;
     }
     return out;
