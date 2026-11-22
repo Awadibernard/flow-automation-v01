@@ -1,12 +1,52 @@
-# Flow Automation V0.1 (prototype)
+# Flow Automation V0.1.1 (prototype)
 
 Extension Chrome Manifest V3 indépendante pour automatiser la génération de contenu
 sur [Google Flow](https://flow.google.com) — de façon **transparente et fiable**,
 sans contournement, sans serveur externe, sans secret de l'extension d'origine.
 
-> Projet de développement par étapes. V0.1 = preuve de concept : file d'attente
-> séquentielle de prompts, attente réelle de fin de génération, détection des
-> médias, téléchargement, persistance et reprise.
+> **Cible prioritaire : Quetta Browser sur Android 12** (fork Chromium MV3).
+> Chrome Desktop reste supporté.
+
+> V0.1.1 = correctif de fiabilité : la chaîne
+> `Popup → Background → Onglet actif → Content script → Google Flow` est
+> désormais **vérifiée à chaque étape**, avec réinjection contrôlée du content
+> script et un **rapport de diagnostic** intégré.
+
+---
+
+## Nouveautés V0.1.1 (correctifs)
+
+### Cause racine du bug « Onglet Flow non prêt » (corrigée)
+
+Le content script était **incorrectement livré** : `content.js` contenait encore
+les préfixes de numéros de ligne (`1: /**`, `2:  * …`), ce qui provoquait
+`SyntaxError: Unexpected token ':'`. Le script ne s'exécutait donc **jamais**
+dans l'onglet Flow : aucun écouteur de messages n'était enregistré, `tabs.sendMessage`
+ne recevait aucune réponse, et le popup affichait un message générique.
+
+- `content.js` réécrit proprement (lignes dé-prefixées).
+- Vérification automatique de syntaxe de tous les fichiers dans les tests.
+- **Réinjection contrôlée** : si le content script est absent, le service worker le
+  réinjecte via `chrome.scripting.executeScript` (une seule tentative par onglet,
+  garde anti-boucle de 5 s).
+
+### Autres correctifs
+
+- **États distincts** au lieu d'un message unique : `API_UNAVAILABLE`,
+  `NO_TAB`, `NOT_FLOW`, `TAB_LOADING`, `CONTENT_ABSENT`, `CONTENT_NO_RESPONSE`,
+  `TAB_COMM_ERROR`, `FLOW_NOT_PROJECT`, `PROJECT_LOADING`, `PROJECT_NO_PROMPT`,
+  `PROMPT_NO_SUBMIT`, `READY` (logique pure dans `status.js`).
+- **Bouton « Diagnostic »** : enchaîne API → onglet → content script → état de la
+  page et affiche un rapport copiable (pour transmission).
+- **Bouton « Démarrer » réparé** : vérifie l'état réel, refuse explicitement si
+  une condition manque, et **confirme par `QUEUE_GET`** que la file tourne
+  vraiment — il ne prétend jamais qu'une génération a commencé sinon.
+- **Logs exploitables** : popup ouvert, onglet trouvé, URL détectée, présence du
+  content script, envoi/réponse de vérification, champ prompt, bouton de
+  génération, erreur précise. Aucun `try/catch` silencieux.
+- **Compatibilité Quetta** : couche `chrome`/`browser` propagée partout ;
+  service worker en script classique (sans `type: module`) pour les forks ;
+  recherche d'onglet robuste (requête filtrée + repli global) ; popup responsive.
 
 ---
 
@@ -14,8 +54,8 @@ sans contournement, sans serveur externe, sans secret de l'extension d'origine.
 
 | # | Fonctionnalité | État |
 |---|---|---|
-| 1 | Détection de Google Flow (`flow.google.com`) | ✅ implémentée (statut affiché dans la popup) |
-| 2 | Vérification que l'utilisateur est dans un projet (champ prompt présent) | ✅ implémentée |
+| 1 | Détection de Google Flow + **état détaillé** | ✅ implémentée (états distincts) |
+| 2 | Vérification projet / champ prompt présent | ✅ implémentée |
 | 3 | Saisie de plusieurs prompts (un par ligne) | ✅ implémentée |
 | 4 | Envoi séquentiel des prompts | ✅ implémentée |
 | 5 | Attente réelle de fin de génération (multiples indices DOM) | ✅ implémentée (à valider sur site réel) |
@@ -23,20 +63,26 @@ sans contournement, sans serveur externe, sans secret de l'extension d'origine.
 | 7 | Téléchargement des fichiers | ✅ implémentée via `chrome.downloads` |
 | 8 | Association résultat → prompt (nom de fichier `NNN_slug.ext`) | ✅ implémentée |
 | 9 | Persistance de la file + reprise après interruption | ✅ implémentée |
-| — | Pause / Reprendre / Annuler | ✅ implémentées |
-| — | Historique des résultats (`storage.results`) | ✅ implémentée |
+| 10 | Pause / Reprendre / Annuler | ✅ implémentées |
+| 11 | Historique des résultats (`storage.results`) | ✅ implémentée |
+| 12 | **Diagnostic intégré** (rapport copiable) | ✅ implémenté |
+| 13 | **Réinjection contrôlée** du content script | ✅ implémentée |
 | — | Application des paramètres Modèle / Ratio / Nombre | ⏳ prévue mais **désactivée** (à tester) |
 
 ## Installation (développement)
 
-1. Ouvrir `chrome://extensions` (ou le gestionnaire d'extensions du navigateur
-   compatible — ex. Quetta).
+1. Ouvrir le gestionnaire d'extensions du navigateur
+   (Quetta : menu → Extensions ; Chrome : `chrome://extensions`).
 2. Activer le **mode développeur**.
-3. Cliquer **« Charger l'extension non empaquetée »** et sélectionner le dossier
-   du projet (celui contenant `manifest.json`).
-4. Ouvrir un onglet sur `flow.google.com`, s'assurer d'être connecté et dans un
-   projet.
-5. Cliquer l'icône de l'extension, saisir les prompts, cliquer **Démarrer**.
+3. **« Charger l'extension non empaquetée »** et sélectionner le dossier du projet
+   (celui contenant `manifest.json`).
+4. Ouvrir un onglet sur `flow.google.com`, être connecté et **dans un projet**
+   (URL contenant `/project/…`).
+5. Ouvrir la popup. Cliquer **« Diagnostic »** pour vérifier la chaîne, puis saisir
+   les prompts et cliquer **Démarrer**.
+
+> Si une ancienne version est installée, la **désinstaller puis réinstaller** pour
+> purger le content script mis en cache.
 
 ### ZIP installable
 
@@ -45,8 +91,9 @@ Un ZIP avec `manifest.json` à la racine est fourni (voir la section Livraison).
 ## Architecture
 
 ```
-manifest.json          Manifest V3 (permissions minimales)
-background.js          Service worker : relais de messages + téléchargements
+manifest.json          Manifest V3 (permissions : storage, downloads, tabs, scripting, activeTab)
+background.js          Service worker : recherche d'onglet, réinjection contrôlée, diagnostic, relais, téléchargements
+status.js              Logique PURE de l'état Flow (testable hors navigateur)
 content.js             Content script : pipeline d'un prompt + orchestration
 flow-dom.js            Détection/manipulation du DOM (pure, sans API extension)
 generation-manager.js  Suivi des générations, détection de fin (multi-indices)
@@ -54,7 +101,7 @@ queue-manager.js       File d'attente séquentielle + persistance + reprise
 download-manager.js    Téléchargement des médias + nommage
 storage-manager.js     Persistance chrome.storage.local
 selectors.json         Sélecteurs locaux versionnés (à ajuster sur site réel)
-popup.html / .css / .js  Interface mobile
+popup.html / .css / .js  Interface mobile (statut détaillé + diagnostic)
 ```
 
 ### Pipeline d'un prompt
@@ -66,91 +113,107 @@ IDLE → PREPARING → SUBMITTING → GENERATING → DETECTING_RESULT → DOWNLO
 
 Chaque transition est journalisée (`storage.logs`, affichée dans la popup).
 
-### Règles de fiabilité (V0.1)
+### Chaîne de communication (vérifiée)
+
+```
+Popup ──GET_ACTIVE_FLOW_TAB──► Background ──tabs.query──► Onglet Flow
+Popup ──ENSURE_CONTENT───────► Background ──PING / scripting.executeScript──► Content script
+Popup ──GET_PAGE_STATE───────► Content script ──► DOM Google Flow
+```
+
+Chaque maillon renvoie un échec **explicite** (jamais un message générique unique).
+
+### Règles de fiabilité
 
 - Une génération n'est **jamais** considérée terminée parce que le bouton a été
   cliqué ou le champ vidé.
-- La fin de génération est détectée par **plusieurs indices** : augmentation du
-  nombre de tuiles, apparition d'un média `video`/`img`, stabilité de la ressource
-  sur plusieurs contrôles espacés, absence de barre de progression.
-- Un média est téléchargé seulement après vérification d'accès best-effort.
-- Si le téléchargement échoue, le résultat est conservé (URL) et une relance
-  manuelle est possible — **jamais** de nouvelle génération automatique.
-- Une seule génération à la fois (séquentiel strict) : aucun doublon de
-  soumission même si la première réponse est lente.
+- Fin détectée par **plusieurs indices** : nouvelle tuile, média `video`/`img`,
+  stabilité sur plusieurs contrôles, absence de barre de progression.
+- **Jamais** de nouvelle génération après un échec de téléchargement.
+- Une seule génération à la fois (séquentiel strict).
+- **Jamais** de démarrage annoncé sans confirmation réelle (`QUEUE_GET`).
 
-## Limites connues de V0.1
+## Limites connues de V0.1.1
 
-1. **Sélecteurs DOM non validés sur le site réel.** Le DOM applicatif de
-   flow.google.com est généré dynamiquement (Angular) et ne peut pas être
-   inspecté hors d'un navigateur connecté. Les sélecteurs actuels
-   (`selectors.json`) sont des hypothèses documentées (`confidence`) basées sur
-   l'analyse du bundle Angular et de l'extension d'origine. **À ajuster** via
-   l'inspection manuelle (F12 → copier sélecteur) en cas d'échec de détection.
+1. **Sélecteurs DOM non validés sur le site réel.** Le DOM de flow.google.com est
+   généré dynamiquement (Angular) et n'est pas inspectable hors navigateur
+   connecté. Les sélecteurs (`selectors.json`) sont des hypothèses documentées
+   (`confidence`). **À ajuster** via F12 en cas d'échec (le diagnostic indique si
+   le champ/bouton sont trouvés).
 2. **Paramètres Modèle/Ratio/Nombre non appliqués** : présents dans l'UI et
-   persistés, mais l'application sur Google Flow n'est pas implémentée ni testée
-   (voir « Étapes suivantes »).
-3. **Vérification d'accès média** : le fetch du content script peut être bloqué
-   par CORS ; dans ce cas le téléchargement est tenté directement (le background
-   a les permissions host). Résultat non garanti avant test réel.
-4. **Quetta / navigateurs Android** : le code utilise `chrome.*` ; une couche
-   d'adaptation (`api = browser || chrome`) est amorcée dans `background.js` et
-   `popup.js` mais non testée sur Quetta.
-5. **Tests** : les tests simulés (2 suites, 37 assertions) passent ; les tests sur
-   navigateur réel (voir « Tests ») n'ont pas pu être exécutés ici.
-6. **Sélecteurs** : `selectors.json` est désormais réellement chargé par le
-   service worker (`fetch(runtime.getURL('selectors.json'))`) et non plus
-   dupliqué en dur. L'utilisateur peut donc ajuster ce fichier sans toucher au
-   code (recharger l'extension ensuite).
+   persistés, mais non appliqués à Google Flow dans cette version.
+3. **Vérification d'accès média** : le `fetch` du content script peut être bloqué
+   par CORS ; le téléchargement est alors tenté directement (le background a les
+   permissions host).
+4. **Réinjection du content script** : dépend de `chrome.scripting.executeScript`.
+   Si Quetta ne l'expose pas, le diagnostic l'affiche (`scripting: NON`,
+   `injectError`). La déclaration `content_scripts` du manifeste reste la voie
+   normale ; la réinjection n'est qu'un filet de sécurité.
+5. **Tests réels sur Quetta/Chrome non exécutés ici** (aucun navigateur
+   pilotable dans l'environnement de développement). Voir « Tests ».
 
 ## Tests (état réel)
 
 ### Résultats des tests simulés (réellement exécutés)
 
-Deux suites de tests unitaires **simulés** existent et ont été exécutées avec
+Quatre suites de tests unitaires **simulés** existent et ont été exécutées avec
 Node.js (hors navigateur) :
 
 ```bash
-node tests/simulate.js        # → Passed: 13 / Failed: 0
-node tests/queue-simulate.js  # → Passed: 24 / Failed: 0
+node tests/simulate.js             # → Passed: 13 / Failed: 0
+node tests/queue-simulate.js       # → Passed: 24 / Failed: 0
+node tests/status-simulate.js      # → Passed: 32 / Failed: 0
+node tests/start-flow-simulate.js  # → Passed: 26 / Failed: 0
 ```
 
 | Suite | Ce qui est testé | Résultat |
 |---|---|---|
-| `tests/simulate.js` | `flow-dom` : détection de page, lecture/écriture du prompt ; `generation-manager` : snapshot, `waitForCompletion` (ok / timeout / annulé), `checkMediaAccess` | ✅ 13/13 |
-| `tests/queue-simulate.js` | `download` : slugify, buildFilename, vérification d'accès (CORS vs HTTP 404 vs 200) ; `queue` : création, persistance, exécution séquentielle, restauration, pause/reprise | ✅ 24/24 |
+| `tests/simulate.js` | `flow-dom` : détection de page, lecture/écriture du prompt ; `generation-manager` : snapshot, `waitForCompletion` (ok/timeout/annulé), `checkMediaAccess` | ✅ 13/13 |
+| `tests/queue-simulate.js` | `download` : slugify, buildFilename, vérification d'accès (CORS/HTTP) ; `queue` : création, persistance, exécution séquentielle, restauration, pause/reprise | ✅ 24/24 |
+| `tests/status-simulate.js` | `status.js` : **les 11 scénarios** — URL exacte fournie, Flow sans projet, projet, chargement, content absent, content présent, message sans réponse, API indisponible, aucun onglet/mauvais site, DOM incomplet, erreur de communication | ✅ 32/32 |
+| `tests/start-flow-simulate.js` | Parcours **Démarrer** : aucun prompt, démarrage valide, multi-prompts, refus si page non prête / content absent / sans réponse / API absente / pas d'onglet, **file inactive ≠ démarré**, erreurs de création et de `tabs.query` | ✅ 26/26 |
 
-> ⚠️ Ces tests **ne valident pas** le comportement réel de Google Flow : le DOM
-> y est simulé (mock). Ils vérifient la logique de l'extension (file, états,
-> persistance, nommage, règles de décision), pas les sélecteurs du site.
+> ⚠️ Ces tests **ne valident pas** le comportement réel de Google Flow (DOM et API
+> simulés). Ils vérifient la logique, pas les sélecteurs du site ni Quetta.
 
 ### Tests nécessitant un navigateur connecté à flow.google.com (NON exécutés ici)
 
-Aucun navigateur n'est disponible dans l'environnement de développement ; les
-tests suivants restent **à exécuter manuellement** :
+Aucun navigateur n'est disponible dans l'environnement de développement ; à
+exécuter **manuellement** (Quetta Android ou Chrome) :
 
-1. Détection de Google Flow (popup affiche « Prêt »).
-2. Détection du champ de prompt (`hasPrompt`).
+1. **Diagnostic** : popup → « Diagnostic » doit indiquer `runtime`, `tabs`,
+   `scripting`, `downloads`, `storage` = OUI, l'onglet Flow, `contentPresent` = OUI,
+   `hasPrompt` = OUI, `hasSubmit` = OUI, verdict `READY`.
+2. Détection de Google Flow (popup affiche « Prêt à générer »).
 3. Envoi d'un prompt et attente de la fin d'une génération réelle.
 4. Détection d'une génération terminée (multiples tuiles, médias stables).
-5. Téléchargement d'un média (nommage `NNN_slug.mp4/jpg`).
+5. Téléchargement d'un média (`NNN_slug.mp4/jpg`).
 6. Exécution de 3 prompts successifs (séquentiel).
 7. Pause / reprise (entre deux prompts).
-8. Interruption (fermeture navigateur) puis restauration : l'état revient en
-   `WAITING_FOR_USER` et aucune génération n'est relancée.
-9. Échec de téléchargement : résultat conservé, pas de nouvelle génération.
-10. Prompts vides / lignes blanches.
+8. Interruption (fermeture navigateur) puis restauration : `WAITING_FOR_USER`,
+   aucune génération relancée.
+9. Échec de téléchargement : résultat conservé, **pas** de nouvelle génération.
+10. Prompts vides / lignes blanches → refus explicite.
+
+**En cas d'échec**, transmettre le **rapport de diagnostic** copié depuis la popup.
+
+## Compatibilité Quetta Browser (Android)
+
+| API / mécanisme | Statut |
+|---|---|
+| `chrome.runtime` / `chrome.storage` / `chrome.tabs` | ✅ utilisés (couche `chrome` prioritaire, repli `browser`) |
+| `chrome.downloads` | ✅ utilisé ; si absent, le diagnostic l'indique (le téléchargement échouerait alors) |
+| `chrome.scripting.executeScript` | ⚠️ utilisé **en filet de sécurité** ; si absent, indiqué dans le diagnostic |
+| `content_scripts` (manifest) | voie normale, dépend du respect du manifeste par le fork |
+| Service worker `type: module` | retiré (script classique) pour maximiser la compatibilité |
+| Popup | largeur responsive (`min-width: 300px`, `max-width: 100vw`) |
+
+Chrome Desktop reste entièrement supporté.
 
 ## Étapes suivantes (roadmap)
 
-- **V0.1-B** : ajuster `selectors.json` sur le site réel, valider l'écriture du
-  prompt et le clic de soumission. *(fichier ajustable sans toucher au code)*
-- **V0.1-C** : valider la détection de fin sur une génération réelle (temps,
-  tuiles, stabilité).
-- **V0.1-D** : valider le téléchargement (URLs googlevideo/lh3, CORS).
-- **V0.1-E** : valider pause/reprise/restauration sur 3 prompts.
-- **V0.1-F** : ✅ tests unitaires simulés écrits et exécutés (2 suites, 37 OK) ;
-  stabilisation & nettoyage effectués.
+- **V0.1-B→E** : valider sur site réel les sélecteurs, la fin de génération, le
+  téléchargement, et la reprise (voir liste des tests manuels).
 - **V0.2** : application vérifiée des paramètres Modèle / Ratio / Nombre, une
   option à la fois, avec vérification après application et arrêt du prompt en cas
   d'échec.

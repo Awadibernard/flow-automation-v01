@@ -3,23 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flow Automation V0.1</title>
+  <title>Flow Automation V0.1.1</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <h1>Flow Automation <span class="badge">V0.1</span></h1>
-    <div id="page-status" class="status">Vérification…</div>
+    <h1>Flow Automation <span class="badge">V0.1.1</span></h1>
   </header>
 
+  <!-- Statut détaillé de la page (état distinct et lisible) -->
+  <section id="status-panel">
+    <div id="page-status" class="status">Vérification…</div>
+    <div id="status-detail" class="status-detail"></div>
+    <div id="status-actions" class="status-actions">
+      <button id="btn-recheck" class="mini">Revérifier</button>
+      <button id="btn-diagnose" class="mini">Diagnostic</button>
+    </div>
+  </section>
+
   <main>
-    <!-- Zone de saisie -->
     <section class="card">
       <label for="prompts">Prompts (un par ligne)</label>
       <textarea id="prompts" rows="5" placeholder="Un prompt par ligne&#10;Exemple : A cat in a spaceship, cinematic light"></textarea>
     </section>
 
-    <!-- Paramètres -->
     <section class="card" id="settings-section">
       <details>
         <summary>Paramètres</summary>
@@ -39,12 +46,11 @@
           <label for="set-folder">Dossier de téléchargement</label>
           <input id="set-folder" type="text" value="flow-automation">
         </div>
-        <p class="hint">Les paramètres Modèle / Ratio / Nombre ne sont PAS encore appliqués
-        à Google Flow dans cette version. Ils seront vérifiés avant chaque application.</p>
+        <p class="hint">Modèle / Ratio / Nombre ne sont PAS encore appliqués à Google Flow
+        dans cette version.</p>
       </details>
     </section>
 
-    <!-- Contrôles -->
     <section class="controls">
       <button id="btn-start" class="primary">Démarrer</button>
       <button id="btn-pause" disabled>Pause</button>
@@ -52,7 +58,6 @@
       <button id="btn-cancel" disabled>Annuler</button>
     </section>
 
-    <!-- Progression -->
     <section class="card">
       <div class="progress-row">
         <span id="queue-progress">0 / 0</span>
@@ -60,13 +65,18 @@
       </div>
     </section>
 
-    <!-- Liste des prompts -->
     <section class="card" id="queue-list">
       <h2>File d'attente</h2>
       <ul id="queue-items"></ul>
     </section>
 
-    <!-- Logs -->
+    <!-- Rapport de diagnostic (affiché sur demande) -->
+    <section class="card" id="diag-card" style="display:none">
+      <h2>Rapport de diagnostic</h2>
+      <pre id="diag-report"></pre>
+      <button id="btn-copy-diag" class="mini">Copier le rapport</button>
+    </section>
+
     <section class="card">
       <details open>
         <summary>Logs</summary>
@@ -75,6 +85,7 @@
     </section>
   </main>
 
+  <script src="status.js"></script>
   <script src="storage-manager.js"></script>
   <script src="popup.js"></script>
 </body>

@@ -12,6 +12,11 @@
     window.FlowAutomation = {};
   }
 
+  // Couche d'adaptation : `chrome` (Chromium/Quetta) en priorité, repli `browser`.
+  const api = (typeof chrome !== 'undefined' && chrome.storage)
+    ? chrome
+    : (typeof browser !== 'undefined' ? browser : (typeof chrome !== 'undefined' ? chrome : null));
+
   const DEFAULTS = {
     settings: {
       model: null,          // null = défaut du site
@@ -34,7 +39,7 @@
    */
   async function get(key) {
     try {
-      const obj = await chrome.storage.local.get(key);
+      const obj = await api.storage.local.get(key);
       const val = obj[key];
       if (val !== undefined && val !== null) return val;
       if (DEFAULTS[key] !== undefined) return structuredClone(DEFAULTS[key]);
@@ -50,7 +55,7 @@
    */
   async function set(key, value) {
     try {
-      await chrome.storage.local.set({ [key]: value });
+      await api.storage.local.set({ [key]: value });
       return true;
     } catch (e) {
       console.error('[storage] set failed', key, e);
@@ -63,7 +68,7 @@
    */
   async function remove(key) {
     try {
-      await chrome.storage.local.remove(key);
+      await api.storage.local.remove(key);
       return true;
     } catch (e) {
       console.error('[storage] remove failed', key, e);
@@ -106,8 +111,8 @@
     const listener = (changes, areaName) => {
       if (areaName === 'local') callback(changes, areaName);
     };
-    chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
+    api.storage.onChanged.addListener(listener);
+    return () => api.storage.onChanged.removeListener(listener);
   }
 
   window.FlowAutomation.storage = {

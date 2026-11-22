@@ -122,6 +122,38 @@
     return !!el;
   };
 
+  /**
+   * True si un bouton de génération/soumission est présent dans le DOM.
+   * Utilisé par le diagnostic pour distinguer "champ OK mais bouton introuvable".
+   */
+  dom.hasSubmitButton = function () {
+    return !!dom.getSubmitButton();
+  };
+
+  /**
+   * True si l'application Flow semble montée (un contenu applicatif existe).
+   * Indice large mais non ambigu : présence d'un élément custom `flow-*`,
+   * d'un champ editable, d'une tuile ou d'un bouton. Sert à distinguer
+   * "page en cours d'initialisation" de "mauvais sélecteur".
+   */
+  dom.hasAppRoot = function () {
+    try {
+      if (document.querySelector('flow-app, [class*="flow-"], flow-tile')) return true;
+      if (document.querySelector("div[contenteditable], [role='textbox']")) return true;
+      if (dom.getResultTiles().length > 0) return true;
+      return !!dom.getSubmitButton();
+    } catch (e) {
+      return false;
+    }
+  };
+
+  /**
+   * document.readyState de la page hôte ('loading'|'interactive'|'complete').
+   */
+  dom.getReadyState = function () {
+    try { return document.readyState; } catch (e) { return 'unknown'; }
+  };
+
   // --- Manipulation du champ de prompt ---
 
   /**
