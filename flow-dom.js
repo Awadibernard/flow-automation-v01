@@ -17,11 +17,40 @@
   const dom = {};
 
   // --- Sélecteurs ---
-  // Les sélecteurs sont injectés par content.js (via selectors.json embarqué).
-  // Par défaut, on retombe sur des sélecteurs génériques Angular.
+  // Les sélecteurs sont injectés par content.js (via selectors.json).
+  // Les valeurs par défaut ci-dessous visent le framework réel de Flow
+  // (Angular Material : <button class="flow-button-*"> avec <mat-icon>).
   let S = {
-    promptTextarea: "div[contenteditable='true'][role='textbox']",
-    submitButton: "button[jsaction*='submit'], button[aria-label*='Create' i], button[aria-label*='Generate' i]",
+    // Prompt : contenteditable typique ; on liste aussi textarea en repli.
+    promptTextarea: [
+      "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true']",
+      "[role='textbox'][contenteditable]",
+      'textarea'
+    ].join(', '),
+    // Bouton d'envoi : familles du plus spécifique au plus générique.
+    submitButton: [
+      "button[data-test-id*='submit' i]",
+      "button[data-testid*='submit' i]",
+      "button[aria-label*='submit' i]",
+      "button[aria-label*='send' i]",
+      "button[aria-label*='generate' i]",
+      "button[aria-label*='create' i]",
+      "button[jsaction*='submit']",
+      "button[type='submit']"
+    ].join(', '),
+    // Replis structurels si aucune famille nommée ne correspond.
+    submitButtonFallbacks: [
+      "form button:not([disabled])",
+      "[role='button'][aria-label*='send' i]",
+      "[role='button'][aria-label*='submit' i]",
+      '[role="button"]',
+      'button:has(mat-icon)',
+      'button:has(svg)',
+      'button:has(i)',
+      'button',
+      'mat-icon'
+    ],
     generatingIndicator: "[role='progressbar'], [class*='progress']",
     resultTiles: "flow-tile, [class*='tile']",
     tileMedia: 'video, img'
@@ -36,6 +65,9 @@
     if (!sel) return;
     if (sel.promptTextarea && sel.promptTextarea.value) S.promptTextarea = sel.promptTextarea.value;
     if (sel.submitButton && sel.submitButton.value) S.submitButton = sel.submitButton.value;
+    if (sel.submitButton && Array.isArray(sel.submitButton.fallbacks)) {
+      S.submitButtonFallbacks = sel.submitButton.fallbacks;
+    }
     if (sel.generatingIndicator && sel.generatingIndicator.value) S.generatingIndicator = sel.generatingIndicator.value;
     if (sel.resultTiles && sel.resultTiles.value) S.resultTiles = sel.resultTiles.value;
     if (sel.tileMedia && sel.tileMedia.value) S.tileMedia = sel.tileMedia.value;
@@ -109,9 +141,17 @@
 
   /**
    * Récupère le champ de prompt. Retourne l'élément ou null.
+   * Critères : contenteditable NON désactivé, ou <textarea> non désactivé.
    */
   dom.getPromptTextarea = function () {
-    return dom.q(S.promptTextarea);
+    const el = dom.q(S.promptTextarea);
+    if (!el) return null;
+    if (el.disabled === true) return null;
+    // `!= null` couvre à la fois null (DOM réel) et undefined (implémentations
+    // simplifiées), sans confondre avec un attribut présent.
+    const dis = el.getAttribute ? el.getAttribute('disabled') : null;
+    if (dis != null) return null;
+    return el;
   };
 
   /**
@@ -205,11 +245,160 @@
   // --- Boutons ---
 
   /**
-   * Trouve le bouton de soumission visible.
+   * True si un élément est actionnable comme bouton (aria/role/tag).
+   */
+  dom.isButtonLike = function (el) {
+    if (!el) return false;
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'button' || tag === 'a') return true;
+    if (el.getAttribute && (el.getAttribute('role') === 'button' || el.getAttribute('type') === 'submit')) return true;
+    return false;
+  };
+
+  /**
+   * Candidats au rôle de bouton d'envoi, en 3 niveaux (du plus fiable au plus large) :
+   *  1. familles nommées (selectors.json) — submit/send/generate/create/type=submit ;
+   *  2. replis structurels — form button:not([disabled]), role=button, :has(mat-icon/svg). ;
+   *  3. dernier recours — 1 seul bouton visible, ou bouton visible adjacent au champ prompt.
+   * Retourne { level, all, visible, button, field }.
+   */
+  dom.getSubmitButtonCandidates = function () {
+    const field = dom.getPromptTextarea();
+
+    // Niveau 1 — sélecteurs nommés
+    let all = dom.qa(S.submitButton).filter((el) => !el.disabled);
+    let level = 'named';
+
+    // Niveau 2 — replis structurels
+    if (!all.length) {
+      level = 'structural';
+      for (const sel of (S.submitButtonFallbacks || [])) {
+        const found = dom.qa(sel).filter((el) => !el.disabled);
+        if (found.length) { all = found; break; }
+      }
+    }
+
+    let visible = all.filter((el) => dom.isVisible(el));
+    let button = visible[0] || null;
+
+    // Niveau 3 — dernier recours contextuel
+    if (!button) {
+      level = 'contextual';
+      const clickable = dom.qa('button, [role="button"], a[href]').filter((el) => dom.isVisible(el) && !el.disabled);
+      if (clickable.length === 1) {
+        button = clickable[0];
+      } else if (field && clickable.length) {
+        const fBox = field.getBoundingClientRect ? field.getBoundingClientRect() : null;
+        if (fBox) {
+          let best = null;
+          let bestDist = Infinity;
+          for (const c of clickable) {
+            const box = c.getBoundingClientRect ? c.getBoundingClientRect() : null;
+            if (!box) continue;
+            // distance entre le centre du bouton et la zone du champ
+            const dx = Math.max(fBox.left - (box.left + box.width), box.left - (fBox.left + fBox.width), 0);
+            const dy = Math.max(fBox.top - (box.top + box.height), box.top - (fBox.top + fBox.height), 0);
+            const d = Math.hypot(dx, dy);
+            if (d < bestDist) { bestDist = d; best = c; }
+          }
+          // seulement si le bouton est proche du champ (< 400 px)
+          if (best && bestDist < 400) button = best;
+        }
+      }
+      if (button) visible = [button];
+    }
+
+    return { level, all, visible, button: button || null, field };
+  };
+
+  /**
+   * Trouve le bouton de soumission (voir getSubmitButtonCandidates).
+   * Conservé pour la compatibilité : renvoie l'élément ou null.
    */
   dom.getSubmitButton = function () {
-    const candidates = dom.qa(S.submitButton);
-    return candidates.find((b) => dom.isVisible(b)) || candidates[0] || null;
+    return dom.getSubmitButtonCandidates().button;
+  };
+
+  /**
+   * Indique si le champ prompt est vide (donc : quoi qu'on fasse, l'envoi
+   * n'aura probablement pas d'effet).
+   */
+  dom.isPromptEmpty = function () {
+    return dom.getPromptText().trim().length === 0;
+  };
+
+  /**
+   * Décrit de façon concise les éléments interactifs visibles : sert au
+   * diagnostic pour comprendre POURQUOI un sélecteur ne correspond pas.
+   * Retourne une liste de chaînes 'tag[attrs]{texte}'.
+   */
+  dom.describeInteractiveElements = function (limit) {
+    const out = [];
+    const max = limit || 12;
+    let els = [];
+    try { els = dom.qa('button, [role="button"], a[href], mat-icon, [contenteditable]'); }
+    catch (e) { return out; }
+    for (const el of els) {
+      if (!dom.isVisible(el)) continue;
+      const tag = (el.tagName || '').toLowerCase();
+      const attrs = [];
+      const al = el.getAttribute && el.getAttribute('aria-label');
+      const dt = el.getAttribute && (el.getAttribute('data-test-id') || el.getAttribute('data-testid'));
+      const ja = el.getAttribute && el.getAttribute('jsaction');
+      const ty = el.getAttribute && el.getAttribute('type');
+      if (al) attrs.push('aria-label="' + String(al).slice(0, 60) + '"');
+      if (dt) attrs.push('data-test-id="' + String(dt).slice(0, 40) + '"');
+      if (ja) attrs.push('jsaction="' + String(ja).slice(0, 50) + '"');
+      if (ty) attrs.push('type="' + ty + '"');
+      const txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+      out.push(tag + (attrs.length ? '[' + attrs.join(' ') + ']' : '') + (txt ? '{' + txt + '}' : ''));
+      if (out.length >= max) break;
+    }
+    return out;
+  };
+
+  /**
+   * Valide la soumission du prompt : soit en cliquant le bouton trouvé, soit,
+   * en dernier recours, en envoyant une touche Entrée depuis le champ (si un
+   * bouton n'est pas identifiable mais que le champ est rempli).
+   * Retourne { ok, via, level, error } — jamais de silence.
+   */
+  dom.submitPrompt = function () {
+    const c = dom.getSubmitButtonCandidates();
+    if (c.button) {
+      const ok = dom.click(c.button);
+      return { ok, via: 'button', level: c.level, error: ok ? null : 'clic refusé par le DOM' };
+    }
+    // Repli Entrée : pertinent uniquement si le champ contient du texte.
+    const field = c.field;
+    if (field && !dom.isPromptEmpty()) {
+      const ok = dom.pressEnter(field);
+      return { ok, via: 'enter', level: 'keyboard', error: ok ? null : 'événement Entrée non pris en compte' };
+    }
+    return {
+      ok: false, via: null, level: c.level,
+      error: field && dom.isPromptEmpty()
+        ? 'Bouton introuvable et champ vide (saisie non prise en compte ?)'
+        : 'Bouton de génération introuvable'
+    };
+  };
+
+  /**
+   * Envoie une touche Entrée réaliste sur un élément (pour les champs où
+   * l'envoi se fait au clavier). Retourne true si l'événement n'a pas levé.
+   */
+  dom.pressEnter = function (field) {
+    if (!field) return false;
+    try {
+      const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      field.dispatchEvent(new KeyboardEvent('keydown', opts));
+      field.dispatchEvent(new KeyboardEvent('keypress', opts));
+      field.dispatchEvent(new KeyboardEvent('keyup', opts));
+      return true;
+    } catch (e) {
+      console.error('[flow-dom] pressEnter failed', e);
+      return false;
+    }
   };
 
   /**

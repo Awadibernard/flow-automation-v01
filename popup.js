@@ -1,5 +1,5 @@
 /**
- * popup.js — Flow Automation V0.1.2
+ * popup.js — Flow Automation V0.1.3
  *
  * Chaîne réelle : Popup -> Background -> Onglet actif -> Content script -> DOM.
  * Aucun échec silencieux : chaque étape est journalisée et affichée.
@@ -255,7 +255,7 @@ async function checkFlowPage() {
 function fmtDiag(r) {
   const L = [];
   const yn = (v) => (v ? 'OUI' : 'NON');
-  L.push('Flow Automation V0.1.2 — Diagnostic');
+  L.push('Flow Automation V0.1.3 — Diagnostic');
   L.push('Date : ' + new Date(r.ts || Date.now()).toLocaleString());
   L.push('');
   L.push('== API ==');
@@ -289,9 +289,15 @@ function fmtDiag(r) {
     L.push('readyState     : ' + r.pageState.readyState);
     L.push('app montée     : ' + yn(r.pageState.hasAppRoot));
     L.push('champ prompt   : ' + yn(r.pageState.hasPrompt));
-    L.push('bouton générer : ' + yn(r.pageState.hasSubmit));
+    L.push('bouton générer : ' + yn(r.pageState.hasSubmit) +
+      (r.pageState.submitLevel ? ' (via ' + r.pageState.submitLevel + ')' : ''));
     L.push('tuiles         : ' + r.pageState.tiles);
     L.push('médias         : ' + r.pageState.medias);
+    if (r.pageState.seen && r.pageState.seen.length) {
+      L.push('');
+      L.push('== ÉLÉMENTS INTERACTIFS VISIBLES ==');
+      r.pageState.seen.forEach((s, i) => L.push('  [' + i + '] ' + s));
+    }
   }
   if (r.error) L.push('\nERREUR : ' + r.error + (r.errorStage ? ' (' + r.errorStage + ')' : ''));
   L.push('');

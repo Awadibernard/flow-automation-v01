@@ -1,20 +1,31 @@
 {
-  "version": 1,
-  "note": "Sélecteurs locaux pour Google Flow. Version 1 = hypothèses basées sur la structure Angular/Material du site et l'analyse de l'extension d'origine. À VALIDER sur le site réel (navigateur connecté) avant toute mise en production. Le champ 'confidence' indique le niveau de fiabilité estimé.",
+  "version": 2,
+  "note": "Sélecteurs locaux pour Google Flow. Version 2 : familles de boutons d'envoi élargies (data-test-id/aria-label submit|send|generate|create) + replis structurels (form button, role=button, :has(mat-icon/svg/i)) + repli Entrée au clavier. Le diagnostic liste les éléments interactifs visibles pour ajuster sans deviner. confidence = niveau de fiabilité estimé, à VALIDER sur le site réel.",
   "app": {
     "hostPattern": "flow.google.com",
     "projectPathPattern": "/project/"
   },
   "selectors": {
     "promptTextarea": {
-      "value": "div[contenteditable='true'][role='textbox']",
+      "value": "div[contenteditable='true'][role='textbox'], div[contenteditable='true'], [role='textbox'][contenteditable], textarea",
       "confidence": "medium",
-      "source": "analyse extension originale + framework Angular (contenteditable + role textbox)"
+      "source": "contenteditable typique d'Angular ; textarea en repli"
     },
     "submitButton": {
-      "value": "button[jsaction*='submit'], button[aria-label*='Create' i], button[aria-label*='Generate' i], button[data-test-id*='submit' i]",
+      "value": "button[data-test-id*='submit' i], button[data-testid*='submit' i], button[aria-label*='submit' i], button[aria-label*='send' i], button[aria-label*='generate' i], button[aria-label*='create' i], button[jsaction*='submit'], button[type='submit']",
+      "fallbacks": [
+        "form button:not([disabled])",
+        "[role='button'][aria-label*='send' i]",
+        "[role='button'][aria-label*='submit' i]",
+        "[role='button']",
+        "button:has(mat-icon)",
+        "button:has(svg)",
+        "button:has(i)",
+        "button",
+        "mat-icon"
+      ],
       "confidence": "low",
-      "source": "à valider manuellement"
+      "source": "Flow utilise Angular Material : <button class=\"flow-button-*\" ...> avec <mat-icon> à l'intérieur ; l'icône d'envoi est une flèche. Les familles data-test-id/aria-label sont vérifiées d'abord, puis replis structurels, puis repli Entrée."
     },
     "generatingIndicator": {
       "value": "flow-progress-indicator, [class*='progress'], [role='progressbar']",

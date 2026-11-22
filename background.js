@@ -1,5 +1,5 @@
 /**
- * background.js — Flow Automation V0.1.2
+ * background.js — Flow Automation V0.1.3
  * Service worker MV3.
  *
  * Responsabilités :
@@ -334,12 +334,16 @@ async function getSelectors() {
 
 async function initSelectors(force) {
   const EMBEDDED = {
-    version: 1,
+    version: 2,
     note: 'Sélecteurs locaux — repli embarqué',
     app: { hostPattern: 'flow.google.com', projectPathPattern: '/project/' },
     selectors: {
-      promptTextarea: { value: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'], [role='textbox'][contenteditable]", confidence: 'medium' },
-      submitButton: { value: "button[jsaction*='submit'], button[aria-label*='Create' i], button[aria-label*='Generate' i], button[type='submit']", confidence: 'low' },
+      promptTextarea: { value: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'], [role='textbox'][contenteditable], textarea", confidence: 'medium' },
+      submitButton: {
+        value: "button[data-test-id*='submit' i], button[data-testid*='submit' i], button[aria-label*='submit' i], button[aria-label*='send' i], button[aria-label*='generate' i], button[aria-label*='create' i], button[jsaction*='submit'], button[type='submit']",
+        fallbacks: ["form button:not([disabled])", "[role='button'][aria-label*='send' i]", "[role='button']", "button:has(mat-icon)", "button:has(svg)", "button:has(i)", "button", "mat-icon"],
+        confidence: 'low'
+      },
       generatingIndicator: { value: "[role='progressbar'], [class*='progress']", confidence: 'low' },
       resultTiles: { value: "flow-tile, [class*='tile']", confidence: 'low' },
       tileMedia: { value: 'video, img', confidence: 'medium' }
@@ -432,7 +436,7 @@ N.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 N.runtime.onInstalled.addListener((details) => {
   const reason = (details && details.reason) || 'unknown';
-  log('info', 'Extension installée / mise à jour (V0.1.2), raison : ' + reason);
+  log('info', 'Extension installée / mise à jour (V0.1.3), raison : ' + reason);
   // force = true : une mise à jour doit remplacer des sélecteurs périmés.
   initSelectors(true);
 });
@@ -440,4 +444,4 @@ N.runtime.onInstalled.addListener((details) => {
 // Au démarrage du worker on ne force pas : on ne réécrit que si le fichier livré
 // a changé (comparaison d'empreinte), pour préserver un ajustement manuel.
 initSelectors(false);
-log('info', 'Service worker Flow Automation V0.1.2 démarré');
+log('info', 'Service worker Flow Automation V0.1.3 démarré');

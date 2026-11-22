@@ -30,7 +30,7 @@
     console.warn('[content] déjà chargé (v' + window.__FLOW_AUTOMATION_LOADED__ + ') — réinjection ignorée');
     return;
   }
-  window.__FLOW_AUTOMATION_LOADED__ = '0.1.2';
+  window.__FLOW_AUTOMATION_LOADED__ = '0.1.3';
 
   if (typeof window.FlowAutomation === 'undefined') {
     window.FlowAutomation = {};
@@ -83,6 +83,15 @@
   function buildPageState() {
     let snap = { count: 0, medias: [], percent: null };
     try { snap = generation.snapshot(); } catch (e) { /* DOM partiel */ }
+    // Éléments interactifs visibles : indispensable pour diagnostiquer un
+    // sélecteur de bouton qui ne correspond pas (on voit ce qui existe).
+    let seen = [];
+    try { seen = dom.describeInteractiveElements(12); } catch (e) { seen = []; }
+    let submitInfo = { level: null, hasButton: false };
+    try {
+      const c = dom.getSubmitButtonCandidates();
+      submitInfo = { level: c.level, hasButton: !!c.button };
+    } catch (e) { /* ignore */ }
     return {
       url: (typeof location !== 'undefined' ? location.href : ''),
       isFlowPage: dom.isFlowPage(),
@@ -91,6 +100,8 @@
       hasAppRoot: dom.hasAppRoot(),
       hasPrompt: dom.hasPromptTextarea(),
       hasSubmit: dom.hasSubmitButton(),
+      submitLevel: submitInfo.level,
+      seen: seen,
       tiles: snap.count,
       medias: snap.medias.length,
       percent: snap.percent
@@ -140,12 +151,11 @@
     // simple attente de rendu)
     await sleep(800);
 
-    const submitBtn = dom.getSubmitButton();
-    if (!submitBtn) {
-      return { status: 'ERROR', error: 'Bouton de génération introuvable', medias: [] };
+    const submit = dom.submitPrompt();
+    if (!submit.ok) {
+      return { status: 'ERROR', error: submit.error || 'Soumission impossible', medias: [], diag: submit };
     }
-    log('info', 'Soumission du prompt...');
-    dom.click(submitBtn);
+    log('info', 'Soumission du prompt (voie : ' + submit.via + ')');
 
     // 2. GENERATING — attendre la fin réelle
     item.status = 'GENERATING';
